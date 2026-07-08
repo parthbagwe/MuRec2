@@ -4,7 +4,7 @@ import joblib
 from src.config import (
     PROCESSED_DIR, TRACKS_CLEAN_PATH, CATEGORICAL_COLUMNS, MODELS_DIR
 )
-from data.loader import load_raw_dataset
+from src.data.loader import load_raw_dataset
 def clean_and_encode(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Fill nulls, label-encode categoricals. Returns cleaned df + encoders."""
     df = df.copy()
