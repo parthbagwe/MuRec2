@@ -1,6 +1,6 @@
 from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
-RAW_DATA_PATH = ROOT_DIR / "data" / "raw" / "music_recommendation_dataset.xlsx"
+TRACKS_CLEAN_PATH = ROOT_DIR / "data" / "processed" / "tracks_clean.csv"
 PROCESSED_DIR = ROOT_DIR / "data" / "processed"
 SPLITS_DIR = ROOT_DIR / "data" / "splits"
 TRACKS_CLEAN_PATH = PROCESSED_DIR / "tracks_clean.csv"
