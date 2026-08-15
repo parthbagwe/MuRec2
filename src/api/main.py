@@ -6,7 +6,7 @@ Run with:
 
 The lifespan context manager loads all models once at startup —
 not on every request. This is critical for performance since the
-k-NN index and ALS factors are large in-memory structures.
+k-NN index and latent factors are in-memory structures.
 """
 
 from contextlib import asynccontextmanager
@@ -22,12 +22,14 @@ from src.models.content_model import ContentModel
 from src.models.collab_model import CollabModel
 from src.models.hybrid_model import HybridModel
 from src.api.routes import router, init_routes
+from src.pipeline import ensure_artifacts
 
-app = FastAPI()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load models once when the server starts up."""
     print("Loading models...")
+    ensure_artifacts()
 
     df = pd.read_csv(TRACKS_CLEAN_PATH)
 

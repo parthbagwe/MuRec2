@@ -17,6 +17,7 @@ from src.config import TRACKS_CLEAN_PATH, THEME_POOLS, LYRIC_MATRIX_PATH
 
 
 def build_lyric_matrix() -> np.ndarray:
+    LYRIC_MATRIX_PATH.parent.mkdir(parents=True, exist_ok=True)
     df = pd.read_csv(TRACKS_CLEAN_PATH)
 
     # One-hot encode primary_theme_pool against the fixed list of 10 pools

@@ -1,5 +1,7 @@
 from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
+RAW_DATA_PATH = ROOT_DIR / "data" / "raw" / "music_recommendation_dataset.xlsx"
+RAW_CSV_PATH = ROOT_DIR / "data" / "raw" / "music_recommendation_dataset.csv"
 TRACKS_CLEAN_PATH = ROOT_DIR / "data" / "processed" / "tracks_clean.csv"
 PROCESSED_DIR = ROOT_DIR / "data" / "processed"
 SPLITS_DIR = ROOT_DIR / "data" / "splits"
@@ -39,9 +41,12 @@ HYBRID_WEIGHTS = {
 }
 DEFAULT_TOP_K = 10
 MAX_TOP_K = 50
-ALS_FACTORS = 50
-ALS_REGULARIZATION = 0.01
-ALS_ITERATIONS = 20
+LATENT_FACTORS = 50
 API_HOST = "0.0.0.0"
 API_PORT = 8000
-CORS_ORIGINS = ["http://localhost:5173", "http://localhost:3000"]
+CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]

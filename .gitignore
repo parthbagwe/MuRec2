@@ -39,6 +39,13 @@ dist/
 *.h5
 *.pt
 *.pth
+*.npy
+
+# Generated datasets and splits
+data/processed/*
+data/splits/*
+!data/processed/.gitkeep
+!data/splits/.gitkeep
 
 # React
 frontend/node_modules/

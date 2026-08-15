@@ -22,7 +22,10 @@ class HybridModel:
     def recommend(self, track_id: str, k: int = DEFAULT_TOP_K,
                   weights: dict | None = None) -> list[dict]:
         w = weights or HYBRID_WEIGHTS
-        assert abs(sum(w.values()) - 1.0) < 1e-6, "Weights must sum to 1.0"
+        if set(w) != set(HYBRID_WEIGHTS) or any(value < 0 for value in w.values()):
+            raise ValueError("Weights must contain non-negative audio, lyric, and collab values")
+        if abs(sum(w.values()) - 1.0) >= 1e-6:
+            raise ValueError("Weights must sum to 1.0")
 
         # Pull a generous candidate pool from each model so the hybrid
         # re-ranking has enough songs to choose from

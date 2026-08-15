@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE = "http://localhost:8000/api";
+const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 export const searchTracks = (q, genre, page = 1) =>
   axios.get(`${BASE}/tracks`, { params: { q, genre, page, page_size: 20 } });

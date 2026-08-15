@@ -15,6 +15,7 @@ from src.api.schemas import (
     SearchResponse, HealthResponse, RecommendationResponse,
 )
 from src.config import HYBRID_WEIGHTS
+import math
 
 router = APIRouter()
 
@@ -32,19 +33,25 @@ def init_routes(df, hybrid_model, content_model):
 
 
 def _row_to_track(row) -> TrackResponse:
+    def optional(name, cast=None):
+        value = row.get(name)
+        if value is None or (isinstance(value, float) and math.isnan(value)):
+            return None
+        return cast(value) if cast else value
+
     return TrackResponse(
         track_id=row["track_id"],
         title=row["title"],
         artist=row["artist"],
         genre=row["genre"],
-        year=int(row["year"]) if "year" in row else None,
-        bpm=int(row["bpm"]) if "bpm" in row else None,
-        energy=int(row["energy"]) if "energy" in row else None,
-        valence=float(row["valence"]) if "valence" in row else None,
-        popularity=int(row["popularity"]) if "popularity" in row else None,
-        timbre=row.get("timbre"),
-        primary_theme_pool=row.get("primary_theme_pool"),
-        lyric_snippet=row.get("lyric_snippet"),
+        year=optional("year", int),
+        bpm=optional("bpm", int),
+        energy=optional("energy", int),
+        valence=optional("valence", float),
+        popularity=optional("popularity", int),
+        timbre=optional("timbre"),
+        primary_theme_pool=optional("primary_theme_pool"),
+        lyric_snippet=optional("lyric_snippet"),
     )
 
 
@@ -116,6 +123,8 @@ def recommend(req: RecommendRequest):
         raise HTTPException(status_code=404, detail=f"Track '{req.track_id}' not found")
 
     weights = req.weights or HYBRID_WEIGHTS
+    if set(weights) != set(HYBRID_WEIGHTS) or any(value < 0 for value in weights.values()):
+        raise HTTPException(status_code=400, detail="Weights must contain non-negative audio, lyric, and collab values")
     if abs(sum(weights.values()) - 1.0) > 0.01:
         raise HTTPException(
             status_code=400,

@@ -1,11 +1,11 @@
 """
-Collaborative filtering model using ALS (Alternating Least Squares).
+Collaborative filtering model using truncated SVD latent factors.
 
 Since we don't have real user listening logs, we build a SYNTHETIC
 interaction matrix: we simulate "users" as listener archetypes biased
 toward certain genres/themes, and generate plausible play counts. This
 mimics what real user-item data looks like and lets you build + test
-the ALS pipeline now. When you plug in real Last.fm data later, this
+the collaborative pipeline now. When you plug in real listening data later, this
 file's build_synthetic_interactions() is the only function you replace.
 """
 
@@ -13,15 +13,10 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix
 import joblib
-
-try:
-    from implicit.als import AlternatingLeastSquares
-except ImportError:
-    raise ImportError("Run: pip install implicit")
+from sklearn.decomposition import TruncatedSVD
 
 from src.config import (
-    TRACKS_CLEAN_PATH, COLLAB_MODEL_PATH, ALS_FACTORS,
-    ALS_REGULARIZATION, ALS_ITERATIONS, RANDOM_SEED,
+    TRACKS_CLEAN_PATH, COLLAB_MODEL_PATH, LATENT_FACTORS, RANDOM_SEED,
 )
 
 N_SYNTHETIC_USERS = 800
@@ -69,7 +64,7 @@ def build_synthetic_interactions(df: pd.DataFrame) -> csr_matrix:
 class CollabModel:
     def __init__(self):
         self.df: pd.DataFrame | None = None
-        self.als_model: AlternatingLeastSquares | None = None
+        self.factorizer: TruncatedSVD | None = None
         self.item_factors: np.ndarray | None = None
         self.track_id_to_idx: dict[str, int] = {}
 
@@ -77,19 +72,12 @@ class CollabModel:
         self.df = pd.read_csv(TRACKS_CLEAN_PATH)
         interactions = build_synthetic_interactions(self.df)
 
-        self.als_model = AlternatingLeastSquares(
-            factors=ALS_FACTORS,
-            regularization=ALS_REGULARIZATION,
-            iterations=ALS_ITERATIONS,
-            random_state=RANDOM_SEED,
-        )
-        # implicit expects item-user matrix (transpose of user-item)
-        self.als_model.fit(interactions)
-
-        self.item_factors = self.als_model.item_factors
+        factors = min(LATENT_FACTORS, min(interactions.shape) - 1)
+        self.factorizer = TruncatedSVD(n_components=factors, random_state=RANDOM_SEED)
+        self.item_factors = self.factorizer.fit_transform(interactions.T)
         self.track_id_to_idx = {tid: i for i, tid in enumerate(self.df["track_id"])}
 
-        print(f"ALS fitted. Item factors shape: {self.item_factors.shape}")
+        print(f"Latent-factor model fitted. Item factors shape: {self.item_factors.shape}")
         return self
 
     def recommend(self, track_id: str, k: int = 10) -> list[dict]:
@@ -125,6 +113,7 @@ class CollabModel:
         return results
 
     def save(self, path=COLLAB_MODEL_PATH):
+        path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self, path)
         print(f"Saved collab model: {path}")
 

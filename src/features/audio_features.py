@@ -6,6 +6,8 @@ from src.config import (
 )
 from sklearn.preprocessing import StandardScaler
 def build_audio_matrix() -> np.ndarray:
+    AUDIO_MATRIX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SCALER_PATH.parent.mkdir(parents=True, exist_ok=True)
     df = pd.read_csv(TRACKS_CLEAN_PATH)
     missing = [c for c in AUDIO_FEATURE_COLUMNS if c not in df.columns]
     if missing:

@@ -32,7 +32,7 @@ class ContentModel:
         self.audio_matrix = np.load(AUDIO_MATRIX_PATH)
         self.lyric_matrix = np.load(LYRIC_MATRIX_PATH)
 
-        if len(self.df) != self.audio_matrix.shape[0]:
+        if len(self.df) != self.audio_matrix.shape[0] or len(self.df) != self.lyric_matrix.shape[0]:
             raise ValueError(
                 f"Row mismatch: df has {len(self.df)} rows, "
                 f"audio matrix has {self.audio_matrix.shape[0]}"
@@ -60,7 +60,8 @@ class ContentModel:
         idx = self.track_id_to_idx[track_id]
         query_vec = self.combined_matrix[idx].reshape(1, -1)
 
-        distances, indices = self.nn_index.kneighbors(query_vec, n_neighbors=min(k + 1, MAX_TOP_K + 1))
+        n_neighbors = min(k + 1, MAX_TOP_K + 1, len(self.df))
+        distances, indices = self.nn_index.kneighbors(query_vec, n_neighbors=n_neighbors)
 
         results = []
         for dist, neighbor_idx in zip(distances[0], indices[0]):
@@ -93,6 +94,7 @@ class ContentModel:
         return float(np.dot(a, b) / denom) if denom != 0 else 0.0
 
     def save(self, path=CONTENT_MODEL_PATH):
+        path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(self, path)
         print(f"Saved content model: {path}")
 
