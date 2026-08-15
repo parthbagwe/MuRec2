@@ -16,3 +16,14 @@ export const getSimilar = (track_id, k = 10) =>
 
 export const getGenres = () =>
   axios.get(`${BASE}/genres`);
+
+export const analyzeUnknown = (file, title, k = 12) => {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("title", title || file.name.replace(/\.[^.]+$/, ""));
+  form.append("k", String(k));
+  return axios.post(`${BASE}/analyze`, form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120000,
+  });
+};

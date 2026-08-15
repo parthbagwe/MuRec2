@@ -1,8 +1,16 @@
 """End-to-end training orchestration and artifact bootstrapping."""
 
+import json
+
 from data.preprocessor import run_preprocessing
 from data.splitter import run_split
-from src.config import COLLAB_MODEL_PATH, CONTENT_MODEL_PATH, TRACKS_CLEAN_PATH
+from src.config import (
+    ARTIFACT_METADATA_PATH,
+    ARTIFACT_VERSION,
+    COLLAB_MODEL_PATH,
+    CONTENT_MODEL_PATH,
+    TRACKS_CLEAN_PATH,
+)
 from src.features.audio_features import build_audio_matrix
 from src.features.lyric_features import build_lyric_matrix
 from src.models.collab_model import CollabModel
@@ -25,11 +33,19 @@ def train_all() -> None:
 
     print(f"\n{'=' * 60}\nSTEP 6/6 — Collaborative model\n{'=' * 60}")
     CollabModel().fit().save()
+    ARTIFACT_METADATA_PATH.write_text(
+        json.dumps({"version": ARTIFACT_VERSION}), encoding="utf-8"
+    )
     print(f"\n{'=' * 60}\nDONE — model artifacts are ready\n{'=' * 60}")
 
 
 def ensure_artifacts() -> None:
     required = (TRACKS_CLEAN_PATH, CONTENT_MODEL_PATH, COLLAB_MODEL_PATH)
-    if not all(path.exists() and path.stat().st_size > 0 for path in required):
+    try:
+        metadata = json.loads(ARTIFACT_METADATA_PATH.read_text(encoding="utf-8"))
+        current_version = metadata.get("version") == ARTIFACT_VERSION
+    except (FileNotFoundError, json.JSONDecodeError):
+        current_version = False
+    if not current_version or not all(path.exists() and path.stat().st_size > 0 for path in required):
         print("Model artifacts are missing; training the demo pipeline now.")
         train_all()

@@ -23,6 +23,7 @@ from src.models.collab_model import CollabModel
 from src.models.hybrid_model import HybridModel
 from src.api.routes import router, init_routes
 from src.pipeline import ensure_artifacts
+from src.catalog import load_catalog
 
 
 @asynccontextmanager
@@ -36,10 +37,11 @@ async def lifespan(app: FastAPI):
     content_model = ContentModel.load(CONTENT_MODEL_PATH)
     collab_model = CollabModel.load(COLLAB_MODEL_PATH)
     hybrid_model = HybridModel(content_model, collab_model)
+    catalog_df = load_catalog()
 
-    init_routes(df, hybrid_model, content_model)
+    init_routes(df, hybrid_model, content_model, catalog_df)
 
-    print(f"Models loaded. Serving {len(df)} tracks.")
+    print(f"Models loaded. Serving {len(catalog_df):,} real catalogue tracks.")
     yield
     print("Shutting down.")
 

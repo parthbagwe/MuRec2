@@ -1,12 +1,12 @@
 # MuRec2
 
-MuRec2 is an explainable hybrid music recommendation demo. Pick a track and it ranks similar songs using three signals:
+MuRec2 is an explainable music recommendation app backed by a real Apple Music metadata catalogue. Pick a track and it ranks real songs using genre, artist, release era, and duration metadata.
 
-- **Audio similarity** — tempo, energy, spectral measurements, MFCCs, and chroma features.
-- **Lyric similarity** — lyrical theme, sentiment, and arousal.
-- **Collaborative similarity** — latent listening patterns learned from a user–track interaction matrix.
+- **Real catalogue search** — 3,464 real songs imported through Apple's official iTunes Search API, plus live Apple search results.
+- **Metadata recommendations** — transparent genre, artist, and era/duration affinity scores.
+- **Unknown-song analysis** — transient analysis of user-provided audio for tempo, timbre, spectral measurements, MFCCs, chroma, and key.
 
-Every result exposes the three component scores and the combined score, and the web UI lets you rebalance their weights.
+Every real catalogue result includes its Apple Music source link. Apple preview audio is not downloaded, cached, or analyzed.
 
 ## How it works
 
@@ -17,7 +17,9 @@ catalogue -> cleaning -> audio/lyric vectors -> nearest-neighbour model
                                       weighted fusion -> FastAPI -> React
 ```
 
-The repository includes a deterministic 320-track demo catalogue generator, so it runs from a fresh clone without private data. To use real data, place `music_recommendation_dataset.xlsx` (sheet `dataset`) or `music_recommendation_dataset.csv` in `data/raw/`. The schema is validated by `data/loader.py`.
+The committed catalogue lives at `data/catalog/apple_tracks.csv`. Refresh it responsibly with `python scripts/import_apple_catalog.py`; the importer spaces requests to respect Apple's documented Search API guidance. Spotify can be added only with a registered Spotify developer app and OAuth credentials, and Spotify content must not be used to train an ML/AI model.
+
+If a title is not in the local catalogue, MuRec2 supplements results with a live Apple search. If no result exists, the UI offers an audio upload fallback. MuRec2 analyzes up to 45 seconds of the file, extracts tempo, RMS energy, spectral centroid and rolloff, spectral flux, zero-crossing rate, 13 MFCCs, chroma/key, and a timbre label, estimates a genre profile, and returns real Apple catalogue songs from matching genre families. Uploaded audio is deleted immediately after analysis and is never added to the repository.
 
 ## Quick start
 
@@ -54,6 +56,7 @@ The API automatically trains missing artifacts at startup, so `python train.py` 
 | GET | `/api/genres` | Available genres |
 | GET | `/api/similar/{track_id}` | Content-only neighbours |
 | POST | `/api/recommend` | Weighted hybrid recommendations |
+| POST | `/api/analyze` | Transiently analyze an unknown audio file and return acoustic matches |
 
 Example request:
 

@@ -19,6 +19,10 @@ class TrackResponse(BaseModel):
     timbre: Optional[str] = None
     primary_theme_pool: Optional[str] = None
     lyric_snippet: Optional[str] = None
+    album: Optional[str] = None
+    artwork_url: Optional[str] = None
+    external_url: Optional[str] = None
+    source: Optional[str] = None
 
 
 class RecommendationResponse(BaseModel):
@@ -30,6 +34,12 @@ class RecommendationResponse(BaseModel):
     lyric_similarity: float = Field(ge=0.0, le=1.0)
     collab_similarity: float = Field(ge=0.0, le=1.0)
     hybrid_score: float = Field(ge=0.0, le=1.0)
+    year: Optional[int] = None
+    album: Optional[str] = None
+    artwork_url: Optional[str] = None
+    external_url: Optional[str] = None
+    source: Optional[str] = None
+    score_mode: str = "hybrid"
 
 
 class RecommendRequest(BaseModel):
@@ -55,3 +65,22 @@ class HealthResponse(BaseModel):
     status: str
     models_loaded: bool
     total_tracks: int
+
+
+class AudioProfileResponse(BaseModel):
+    bpm: float
+    energy: float
+    brightness: float
+    spectral_centroid_hz: float
+    spectral_rolloff_hz: float
+    zero_crossing_rate: float
+    key: str
+    timbre: str
+
+
+class AnalyzeResponse(BaseModel):
+    anchor: TrackResponse
+    recommendations: list[RecommendationResponse]
+    audio_profile: AudioProfileResponse
+    total: int
+    model: str = "uploaded-audio-similarity"

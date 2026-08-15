@@ -14,7 +14,7 @@ from sklearn.neighbors import NearestNeighbors
 
 from src.config import (
     TRACKS_CLEAN_PATH, AUDIO_MATRIX_PATH, LYRIC_MATRIX_PATH,
-    COMBINED_MATRIX_PATH, CONTENT_MODEL_PATH, MAX_TOP_K,
+    COMBINED_MATRIX_PATH, CONTENT_MODEL_PATH, MAX_TOP_K, SCALER_PATH,
 )
 
 
@@ -86,6 +86,28 @@ class ContentModel:
             if len(results) >= k:
                 break
 
+        return results
+
+    def recommend_from_audio(self, raw_audio_vector: np.ndarray, k: int = 12) -> list[dict]:
+        """Rank catalogue tracks against features extracted from an uploaded song."""
+        scaler = joblib.load(SCALER_PATH)
+        query = scaler.transform(raw_audio_vector.reshape(1, -1))[0]
+        similarities = np.array([self._cosine(query, row) for row in self.audio_matrix])
+        indices = np.argsort(-similarities)[: min(k, len(self.df))]
+        results = []
+        for index in indices:
+            row = self.df.iloc[index]
+            score = float(np.clip((similarities[index] + 1) / 2, 0, 1))
+            results.append({
+                "track_id": row["track_id"],
+                "title": row["title"],
+                "artist": row["artist"],
+                "genre": row["genre"],
+                "audio_similarity": round(score, 4),
+                "lyric_similarity": 0.0,
+                "collab_similarity": 0.0,
+                "hybrid_score": round(score, 4),
+            })
         return results
 
     @staticmethod
