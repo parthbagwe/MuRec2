@@ -35,6 +35,13 @@ _catalog_df = None
 _live_tracks = {}
 
 
+def _recording_key(row) -> tuple[str, str]:
+    return (
+        str(row.get("title", "")).casefold().strip(),
+        str(row.get("artist", "")).casefold().strip(),
+    )
+
+
 def init_routes(df, hybrid_model, content_model, catalog_df):
     global _df, _hybrid_model, _content_model, _catalog_df
     _df = df
@@ -55,6 +62,7 @@ def _row_to_track(row) -> TrackResponse:
         title=row["title"],
         artist=row["artist"],
         genre=row["genre"],
+        subgenre=optional("subgenre"),
         year=optional("year", int),
         bpm=optional("bpm", int),
         energy=optional("energy", int),
@@ -84,7 +92,10 @@ def health():
 def get_genres():
     if _catalog_df is None or _catalog_df.empty:
         raise HTTPException(status_code=503, detail="Models not loaded")
-    return {"genres": sorted(_catalog_df["genre"].dropna().unique().tolist())}
+    return {
+        "genres": sorted(_catalog_df["genre"].dropna().unique().tolist()),
+        "subgenres": sorted(_catalog_df["subgenre"].dropna().unique().tolist()),
+    }
 
 
 @router.get("/tracks", response_model=SearchResponse)
@@ -110,6 +121,12 @@ def get_tracks(
     if genre:
         filtered = filtered[filtered["genre"].str.lower() == genre.lower()]
 
+    # Apple often exposes the same recording on several album editions.
+    filtered = filtered.assign(
+        _title_key=filtered["title"].astype(str).str.casefold().str.strip(),
+        _artist_key=filtered["artist"].astype(str).str.casefold().str.strip(),
+    ).drop_duplicates(subset=["_title_key", "_artist_key"])
+
     total = len(filtered)
     start = (page - 1) * page_size
     paginated = filtered.iloc[start:start + page_size]
@@ -120,11 +137,14 @@ def get_tracks(
         try:
             live_rows = search_apple(q, limit=min(25, page_size))
             known_ids = {str(row["track_id"]) for row in result_rows}
+            known_recordings = {_recording_key(row) for row in result_rows}
             for row in live_rows:
                 _live_tracks[str(row["track_id"])] = row
-                if str(row["track_id"]) not in known_ids:
+                recording_key = _recording_key(row)
+                if str(row["track_id"]) not in known_ids and recording_key not in known_recordings:
                     result_rows.append(row)
                     known_ids.add(str(row["track_id"]))
+                    known_recordings.add(recording_key)
                 if len(result_rows) >= page_size:
                     break
         except requests.RequestException:
@@ -157,7 +177,7 @@ def recommend(req: RecommendRequest):
         anchor = anchor_match.iloc[0].to_dict() if not anchor_match.empty else _live_tracks.get(req.track_id)
         if anchor is None:
             raise HTTPException(status_code=404, detail=f"Track '{req.track_id}' not found")
-        weights = req.weights or {"audio": 0.55, "lyric": 0.20, "collab": 0.25}
+        weights = req.weights or {"audio": 0.65, "lyric": 0.10, "collab": 0.25}
         if set(weights) != set(HYBRID_WEIGHTS) or any(value < 0 for value in weights.values()):
             raise HTTPException(status_code=400, detail="Weights must contain non-negative genre, artist, and era values")
         if abs(sum(weights.values()) - 1.0) > 0.01:

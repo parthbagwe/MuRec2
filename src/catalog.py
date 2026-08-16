@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 
 from src.config import APPLE_CATALOG_PATH
+from src.subgenres import infer_subgenre, subgenre_similarity
 
 APPLE_SEARCH_URL = "https://itunes.apple.com/search"
 
@@ -17,6 +18,13 @@ def load_catalog() -> pd.DataFrame:
         return pd.DataFrame()
     frame = pd.read_csv(APPLE_CATALOG_PATH)
     frame["track_id"] = frame["track_id"].astype(str)
+    if "subgenre" not in frame.columns:
+        frame["subgenre"] = frame.apply(
+            lambda row: infer_subgenre(
+                row.get("artist", ""), row.get("genre", ""),
+                row.get("seed_genre", ""), row.get("title", ""),
+            ), axis=1,
+        )
     return frame
 
 
@@ -29,9 +37,10 @@ def _normalize(result: dict) -> dict | None:
         return None
     release = str(result.get("releaseDate", ""))
     genre = result.get("primaryGenreName") or "Music"
+    subgenre = infer_subgenre(artist, genre, genre.lower(), title)
     return {
         "track_id": f"apple-{track_id}", "title": title, "artist": artist,
-        "album": result.get("collectionName", ""), "genre": genre,
+        "album": result.get("collectionName", ""), "genre": genre, "subgenre": subgenre,
         "seed_genre": genre.lower(),
         "year": int(release[:4]) if release[:4].isdigit() else None,
         "duration_ms": result.get("trackTimeMillis"),
@@ -95,21 +104,32 @@ def recommend_metadata(
     k: int = 12,
     weights: dict[str, float] | None = None,
 ) -> list[dict]:
-    anchor_seed = str(anchor.get("seed_genre", "")).lower()
     anchor_genre = str(anchor.get("genre", "")).lower()
+    anchor_subgenre = str(anchor.get("subgenre") or infer_subgenre(
+        anchor.get("artist", ""), anchor_genre, anchor.get("seed_genre", ""), anchor.get("title", ""),
+    )).lower()
     anchor_artist = str(anchor.get("artist", "")).lower()
     anchor_artists = _artist_names(anchor_artist)
     anchor_year = _number(anchor.get("year"), 2005)
     anchor_duration = _number(anchor.get("duration_ms"), 210_000)
-    active_weights = weights or {"audio": 0.55, "lyric": 0.20, "collab": 0.25}
+    active_weights = weights or {"audio": 0.65, "lyric": 0.10, "collab": 0.25}
+    anchor_title_key = str(anchor.get("title", "")).casefold().strip()
+    anchor_artist_key = str(anchor.get("artist", "")).casefold().strip()
     scored = []
     for row in catalog.to_dict("records"):
-        if str(row.get("track_id")) == str(anchor.get("track_id")):
+        same_id = str(row.get("track_id")) == str(anchor.get("track_id"))
+        same_recording = (
+            str(row.get("title", "")).casefold().strip() == anchor_title_key
+            and str(row.get("artist", "")).casefold().strip() == anchor_artist_key
+        )
+        if same_id or same_recording:
             continue
-        seed = str(row.get("seed_genre", "")).lower()
         genre = str(row.get("genre", "")).lower()
+        subgenre = str(row.get("subgenre") or infer_subgenre(
+            row.get("artist", ""), genre, row.get("seed_genre", ""), row.get("title", ""),
+        )).lower()
         artist = str(row.get("artist", "")).lower()
-        genre_score = 1.0 if seed == anchor_seed else (0.75 if genre == anchor_genre else 0.15)
+        genre_score = subgenre_similarity(anchor_subgenre, subgenre)
         artist_score = 1.0 if _artist_names(artist) & anchor_artists else 0.0
         year_score = math.exp(-abs(_number(row.get("year"), anchor_year) - anchor_year) / 12)
         duration_score = math.exp(-abs(_number(row.get("duration_ms"), anchor_duration) - anchor_duration) / 120_000)
@@ -140,7 +160,8 @@ def recommend_from_genres(catalog: pd.DataFrame, genres: list[str], k: int = 12)
 def _recommendation(row: dict, first: float, second: float, third: float, total: float, mode: str) -> dict:
     return {
         "track_id": str(row["track_id"]), "title": row["title"], "artist": row["artist"],
-        "genre": row.get("genre") or "Music", "year": int(_number(row.get("year"), 0)) or None,
+        "genre": row.get("genre") or "Music", "subgenre": _text(row.get("subgenre")),
+        "year": int(_number(row.get("year"), 0)) or None,
         "album": _text(row.get("album")), "artwork_url": _text(row.get("artwork_url")),
         "preview_url": _text(row.get("preview_url")),
         "external_url": _text(row.get("external_url")), "source": _text(row.get("source")) or "Apple Music",

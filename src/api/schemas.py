@@ -11,6 +11,7 @@ class TrackResponse(BaseModel):
     title: str
     artist: str
     genre: str
+    subgenre: Optional[str] = None
     year: Optional[int] = None
     bpm: Optional[int] = None
     energy: Optional[int] = None
@@ -31,6 +32,7 @@ class RecommendationResponse(BaseModel):
     title: str
     artist: str
     genre: str
+    subgenre: Optional[str] = None
     audio_similarity: float = Field(ge=0.0, le=1.0)
     lyric_similarity: float = Field(ge=0.0, le=1.0)
     collab_similarity: float = Field(ge=0.0, le=1.0)

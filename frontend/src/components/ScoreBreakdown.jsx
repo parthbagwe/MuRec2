@@ -17,7 +17,7 @@ function Bar({ label, value, color }) {
 
 export default function ScoreBreakdown({ rec }) {
   const labels = rec.score_mode === "metadata"
-    ? ["genre", "artist", "era"]
+    ? ["subgenre", "artist", "era"]
     : rec.score_mode === "acoustic-profile"
       ? ["profile", "genre", "era"]
       : ["audio", "lyrics", "collab"];

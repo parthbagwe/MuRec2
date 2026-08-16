@@ -3,7 +3,7 @@ import { analyzeUnknown, getRecommendations } from "./api";
 import SearchBar from "./components/SearchBar";
 import RecommendationCard from "./components/RecommendationBar";
 
-const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.35, collab: 0.3 };
+const DEFAULT_WEIGHTS = { audio: 0.65, lyric: 0.1, collab: 0.25 };
 
 export default function App() {
   const [selected, setSelected] = useState(null);
@@ -16,7 +16,7 @@ export default function App() {
   const [playingTrackId, setPlayingTrackId] = useState(null);
   const scoreMode = recommendations[0]?.score_mode;
   const weightLabels = selected?.source === "Apple Music"
-    ? { audio: "genre", lyric: "artist", collab: "era" }
+    ? { audio: "subgenre", lyric: "artist", collab: "era" }
     : { audio: "audio", lyric: "lyric", collab: "collab" };
 
   async function recommend(track, nextWeights = weights) {

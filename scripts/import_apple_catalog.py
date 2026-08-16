@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 import time
 
 import pandas as pd
 import requests
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from src.subgenres import infer_subgenre  # noqa: E402
+
 OUTPUT = ROOT / "data" / "catalog" / "apple_tracks.csv"
 SEARCH_URL = "https://itunes.apple.com/search"
 
@@ -35,12 +40,14 @@ def normalize(result: dict, seed_genre: str) -> dict | None:
     if not all((track_id, title, artist, external_url)):
         return None
     release_date = str(result.get("releaseDate", ""))
+    genre = result.get("primaryGenreName") or seed_genre
     return {
         "track_id": f"apple-{track_id}",
         "title": title,
         "artist": artist,
         "album": result.get("collectionName", ""),
-        "genre": result.get("primaryGenreName") or seed_genre,
+        "genre": genre,
+        "subgenre": infer_subgenre(artist, genre, seed_genre, title),
         "seed_genre": seed_genre,
         "year": int(release_date[:4]) if release_date[:4].isdigit() else None,
         "duration_ms": result.get("trackTimeMillis"),

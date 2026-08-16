@@ -18,6 +18,7 @@ def test_health_search_and_recommendation():
         assert search.status_code == 200
         track = search.json()["results"][0]
         assert track["source"] == "Apple Music"
+        assert track["subgenre"]
         assert track["preview_url"].startswith("https://")
 
         recommendations = client.post("/api/recommend", json={"track_id": track["track_id"], "k": 5})
@@ -26,6 +27,34 @@ def test_health_search_and_recommendation():
         assert len(payload["recommendations"]) == 5
         assert payload["anchor"]["track_id"] == track["track_id"]
         assert all(item["preview_url"].startswith("https://") for item in payload["recommendations"])
+
+
+def test_subgenres_separate_nu_metal_from_alternative_rock():
+    with TestClient(app) as client:
+        search = client.get("/api/tracks", params={"q": "Duality Slipknot", "page_size": 10})
+        assert search.status_code == 200
+        search_results = search.json()["results"]
+        recording_keys = {(item["title"].casefold(), item["artist"].casefold()) for item in search_results}
+        assert len(recording_keys) == len(search_results)
+        duality = next(
+            item for item in search_results
+            if item["title"] == "Duality" and item["artist"] == "Slipknot"
+        )
+        assert duality["subgenre"] == "nu metal"
+
+        response = client.post("/api/recommend", json={"track_id": duality["track_id"], "k": 20})
+        assert response.status_code == 200
+        recommendations = response.json()["recommendations"]
+        assert all(not (item["title"] == "Duality" and item["artist"] == "Slipknot") for item in recommendations)
+        assert all(item["title"] != "Lazarus (2017 Remaster)" for item in recommendations)
+        assert recommendations[0]["audio_similarity"] >= recommendations[-1]["audio_similarity"]
+
+        lazarus = client.get("/api/tracks", params={"q": "Lazarus Porcupine Tree", "page_size": 10})
+        porcupine_tree = next(
+            item for item in lazarus.json()["results"]
+            if item["artist"] == "Porcupine Tree" and item["title"].startswith("Lazarus")
+        )
+        assert porcupine_tree["subgenre"] == "alternative rock"
 
 
 def test_invalid_weights_are_rejected():

@@ -102,7 +102,7 @@ h2 { margin: 0; font: 600 20px "Manrope"; letter-spacing: -.5px; }
 .recommendation-card p { margin: 0; color: #6f6b62; font-size: 12px; }
 .track-identity small { display: block; margin-top: 4px; color: #9a958a; font-size: 10px; text-transform: capitalize; }
 .score-breakdown { display: grid; gap: 7px; }
-.score-row { display: grid; grid-template-columns: 45px 1fr 34px; gap: 9px; align-items: center; color: #8c887e; font-size: 10px; }
+.score-row { display: grid; grid-template-columns: 58px 1fr 34px; gap: 9px; align-items: center; color: #8c887e; font-size: 10px; }
 .bar-track { height: 5px; overflow: hidden; border-radius: 9px; background: #e7e3da; }
 .bar-fill { height: 100%; border-radius: inherit; transition: width .5s; }
 .score-row strong { color: #625f57; text-align: right; font: 500 10px monospace; }
