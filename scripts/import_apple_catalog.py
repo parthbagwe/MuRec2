@@ -45,6 +45,7 @@ def normalize(result: dict, seed_genre: str) -> dict | None:
         "year": int(release_date[:4]) if release_date[:4].isdigit() else None,
         "duration_ms": result.get("trackTimeMillis"),
         "artwork_url": result.get("artworkUrl100", ""),
+        "preview_url": result.get("previewUrl", ""),
         "external_url": external_url,
         "source": "Apple Music",
     }

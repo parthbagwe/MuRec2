@@ -18,12 +18,14 @@ def test_health_search_and_recommendation():
         assert search.status_code == 200
         track = search.json()["results"][0]
         assert track["source"] == "Apple Music"
+        assert track["preview_url"].startswith("https://")
 
         recommendations = client.post("/api/recommend", json={"track_id": track["track_id"], "k": 5})
         assert recommendations.status_code == 200
         payload = recommendations.json()
         assert len(payload["recommendations"]) == 5
         assert payload["anchor"]["track_id"] == track["track_id"]
+        assert all(item["preview_url"].startswith("https://") for item in payload["recommendations"])
 
 
 def test_invalid_weights_are_rejected():

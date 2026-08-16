@@ -21,6 +21,7 @@ class TrackResponse(BaseModel):
     lyric_snippet: Optional[str] = None
     album: Optional[str] = None
     artwork_url: Optional[str] = None
+    preview_url: Optional[str] = None
     external_url: Optional[str] = None
     source: Optional[str] = None
 
@@ -37,6 +38,7 @@ class RecommendationResponse(BaseModel):
     year: Optional[int] = None
     album: Optional[str] = None
     artwork_url: Optional[str] = None
+    preview_url: Optional[str] = None
     external_url: Optional[str] = None
     source: Optional[str] = None
     score_mode: str = "hybrid"

@@ -36,6 +36,7 @@ def _normalize(result: dict) -> dict | None:
         "year": int(release[:4]) if release[:4].isdigit() else None,
         "duration_ms": result.get("trackTimeMillis"),
         "artwork_url": result.get("artworkUrl100", ""),
+        "preview_url": result.get("previewUrl", ""),
         "external_url": external_url, "source": "Apple Music",
     }
 
@@ -59,6 +60,12 @@ def _number(value, default: float) -> float:
         return default if math.isnan(numeric) else numeric
     except (TypeError, ValueError):
         return default
+
+
+def _text(value) -> str | None:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    return str(value)
 
 
 def _artist_names(value: str) -> set[str]:
@@ -134,8 +141,9 @@ def _recommendation(row: dict, first: float, second: float, third: float, total:
     return {
         "track_id": str(row["track_id"]), "title": row["title"], "artist": row["artist"],
         "genre": row.get("genre") or "Music", "year": int(_number(row.get("year"), 0)) or None,
-        "album": row.get("album"), "artwork_url": row.get("artwork_url"),
-        "external_url": row.get("external_url"), "source": row.get("source", "Apple Music"),
+        "album": _text(row.get("album")), "artwork_url": _text(row.get("artwork_url")),
+        "preview_url": _text(row.get("preview_url")),
+        "external_url": _text(row.get("external_url")), "source": _text(row.get("source")) or "Apple Music",
         "audio_similarity": round(float(first), 4), "lyric_similarity": round(float(second), 4),
         "collab_similarity": round(float(third), 4), "hybrid_score": round(float(total), 4),
         "score_mode": mode,

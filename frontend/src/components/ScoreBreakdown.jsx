@@ -23,9 +23,9 @@ export default function ScoreBreakdown({ rec }) {
       : ["audio", "lyrics", "collab"];
   return (
     <div className="score-breakdown">
-      <Bar label={labels[0]} value={rec.audio_similarity} color="#7F77DD" />
-      <Bar label={labels[1]} value={rec.lyric_similarity} color="#1D9E75" />
-      <Bar label={labels[2]} value={rec.collab_similarity} color="#EF9F27" />
+      <Bar label={labels[0]} value={rec.audio_similarity} color="#ff5a36" />
+      <Bar label={labels[1]} value={rec.lyric_similarity} color="#1a9b71" />
+      <Bar label={labels[2]} value={rec.collab_similarity} color="#e7a51a" />
     </div>
   );
 }

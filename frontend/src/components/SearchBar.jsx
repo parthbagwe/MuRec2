@@ -63,7 +63,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
 
   return (
     <div className="search-wrap">
-      <span className="search-icon">⌕</span>
+      <svg className="search-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-4.6-4.6m2.5-5.4a7.9 7.9 0 1 1-15.8 0 7.9 7.9 0 0 1 15.8 0Z" /></svg>
       <input aria-label="Search songs" placeholder="Search a song or artist…" value={query} onChange={(event) => setQuery(event.target.value)} />
       {loading && <span className="search-status">searching</span>}
       {(results.length > 0 || searched || searchError) && (

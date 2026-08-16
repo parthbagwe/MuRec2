@@ -65,6 +65,7 @@ def _row_to_track(row) -> TrackResponse:
         lyric_snippet=optional("lyric_snippet"),
         album=optional("album"),
         artwork_url=optional("artwork_url"),
+        preview_url=optional("preview_url"),
         external_url=optional("external_url"),
         source=optional("source"),
     )

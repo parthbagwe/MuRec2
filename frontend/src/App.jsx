@@ -13,12 +13,14 @@ export default function App() {
   const [error, setError] = useState("");
   const [audioProfile, setAudioProfile] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [playingTrackId, setPlayingTrackId] = useState(null);
   const scoreMode = recommendations[0]?.score_mode;
   const weightLabels = selected?.source === "Apple Music"
     ? { audio: "genre", lyric: "artist", collab: "era" }
     : { audio: "audio", lyric: "lyric", collab: "collab" };
 
   async function recommend(track, nextWeights = weights) {
+    setPlayingTrackId(null);
     setSelected(track);
     setLoading(true);
     setError("");
@@ -35,6 +37,7 @@ export default function App() {
   }
 
   async function analyze(file, title) {
+    setPlayingTrackId(null);
     setAnalyzing(true);
     setError("");
     try {
@@ -68,9 +71,9 @@ export default function App() {
       <header className="hero">
         <nav><span className="logo">MuRec<span>2</span></span><span className="tag">hybrid recommendation lab</span></nav>
         <div className="hero-copy">
-          <p className="eyebrow">Sound + meaning + listener patterns</p>
+          <p className="eyebrow">Real previews · explainable matches · YouTube discovery</p>
           <h1>Find your next song.<br /><em>Know why it fits.</em></h1>
-          <p className="intro">Search thousands of real songs from Apple Music, then discover matches by genre, artist and era—or analyze an unknown audio file.</p>
+          <p className="intro">Search real songs, hear a short preview, and jump to YouTube when you find the right one. Every match explains why it belongs.</p>
           <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
         </div>
       </header>
@@ -95,7 +98,7 @@ export default function App() {
         </div>
 
         {error && <div className="notice error">{error}</div>}
-        {!error && !selected && <div className="notice">Search 3,464 real Apple Music tracks plus live Apple results. If yours is missing, upload its audio for transient acoustic analysis.</div>}
+        {!error && !selected && <div className="notice">Search 3,464 real songs plus live catalogue results. If yours is missing, upload its audio for transient acoustic analysis.</div>}
         {audioProfile && (
           <div className="audio-profile">
             <div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div>
@@ -112,12 +115,22 @@ export default function App() {
         </div>
         <div className="recommendation-grid">
           {recommendations.map((rec, index) => (
-            <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={recommend} />
+            <RecommendationCard
+              key={rec.track_id}
+              rec={rec}
+              rank={index + 1}
+              onClick={recommend}
+              playingTrackId={playingTrackId}
+              onPreviewChange={setPlayingTrackId}
+            />
           ))}
         </div>
       </section>
 
-      <footer>MuRec2 · Real-song metadata provided by Apple Music · Uploaded audio is not retained</footer>
+      <footer>
+        <span>MuRec2 · Real-song metadata via Apple Search API · Uploaded audio is not retained</span>
+        <nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav>
+      </footer>
     </main>
   );
 }
