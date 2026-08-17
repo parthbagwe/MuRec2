@@ -1,6 +1,29 @@
 import axios from "axios";
 import { createAccount, currentAccount, signIn, signOut, supabase, supabaseEnabled } from "./supabase";
 
+export const hostedApiEnabled = import.meta.env.VITE_MUREC2_API === "supabase";
+
+function requestError(message) {
+  const error = new Error(message);
+  error.response = { data: { detail: message } };
+  return error;
+}
+
+async function edge(action, payload = {}) {
+  const { data, error } = await supabase.functions.invoke("murec2-api", {
+    body: { action, ...payload },
+  });
+  if (error) {
+    let message = error.message || "The hosted music service is unavailable.";
+    try {
+      const body = await error.context?.json();
+      message = body?.detail || message;
+    } catch { /* The SDK message is the fallback. */ }
+    throw requestError(message);
+  }
+  return { data };
+}
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
   withCredentials: true,
@@ -14,24 +37,28 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-export const searchTracks = (q, genre, page = 1) =>
-  api.get("/tracks", { params: { q, genre, page, page_size: 20 } });
+export const searchTracks = (q, genre, page = 1) => hostedApiEnabled
+  ? edge("tracks", { q, genre, page, page_size: 20 })
+  : api.get("/tracks", { params: { q, genre, page, page_size: 20 } });
 
-export const getTrack = (track_id) =>
-  api.get(`/tracks/${track_id}`);
+export const getTrack = (track_id) => hostedApiEnabled
+  ? edge("track", { track_id })
+  : api.get(`/tracks/${track_id}`);
 
-export const getRecommendations = (track_id, k = 10, weights = null, mode = "similar") =>
-  api.post("/recommend", { track_id, k, weights, mode });
+export const getRecommendations = (track_id, k = 10, weights = null, mode = "similar") => hostedApiEnabled
+  ? edge("recommend", { track_id, k, weights, mode })
+  : api.post("/recommend", { track_id, k, weights, mode });
 
-export const getSimilar = (track_id, k = 10) =>
-  api.get(`/similar/${track_id}`, { params: { k } });
+export const getSimilar = (track_id, k = 10) => hostedApiEnabled
+  ? edge("similar", { track_id, k })
+  : api.get(`/similar/${track_id}`, { params: { k } });
 
-export const getGenres = () =>
-  api.get("/genres");
+export const getGenres = () => hostedApiEnabled ? edge("genres") : api.get("/genres");
 
-export const getAcousticStatus = () => api.get("/acoustic-index/status");
+export const getAcousticStatus = () => hostedApiEnabled ? edge("acousticStatus") : api.get("/acoustic-index/status");
 
 export const analyzeUnknown = (file, title, k = 12) => {
+  if (hostedApiEnabled) return Promise.reject(requestError("Audio-file analysis is available in the local MuRec2 desktop version. Search the hosted acoustic catalogue instead."));
   const form = new FormData();
   form.append("file", file);
   form.append("title", title || file.name.replace(/\.[^.]+$/, ""));
@@ -56,15 +83,15 @@ export const logout = () => supabaseEnabled ? signOut() : api.post("/auth/logout
 
 export const getMe = async () => supabaseEnabled ? { data: { user: await currentAccount() } } : api.get("/auth/me");
 
-export const getFavorites = () => api.get("/me/favorites");
+export const getFavorites = () => hostedApiEnabled ? edge("favorites") : api.get("/me/favorites");
 
-export const addFavorite = (track_id) => api.post("/me/favorites", { track_id });
+export const addFavorite = (track_id) => hostedApiEnabled ? edge("addFavorite", { track_id }) : api.post("/me/favorites", { track_id });
 
-export const removeFavorite = (track_id) => api.delete(`/me/favorites/${track_id}`);
+export const removeFavorite = (track_id) => hostedApiEnabled ? edge("removeFavorite", { track_id }) : api.delete(`/me/favorites/${track_id}`);
 
-export const getHistory = () => api.get("/me/history");
+export const getHistory = () => hostedApiEnabled ? edge("history") : api.get("/me/history");
 
-export const clearHistory = () => api.delete("/me/history");
+export const clearHistory = () => hostedApiEnabled ? edge("clearHistory") : api.delete("/me/history");
 
 export const recordEvent = (track_id, event_type, value = null) =>
-  api.post("/events", { track_id, event_type, value });
+  hostedApiEnabled ? edge("event", { track_id, event_type, value }) : api.post("/events", { track_id, event_type, value });

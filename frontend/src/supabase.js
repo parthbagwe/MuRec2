@@ -40,7 +40,10 @@ export async function createAccount(displayName, email, password) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { display_name: displayName.trim() } },
+    options: {
+      data: { display_name: displayName.trim() },
+      emailRedirectTo: `${window.location.origin}/`,
+    },
   });
   if (error) throw requestError(error.message);
   if (!data.session) return { user: null, confirmation_required: true };

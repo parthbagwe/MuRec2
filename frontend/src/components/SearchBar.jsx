@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { searchTracks } from "../api";
+import { hostedApiEnabled, searchTracks } from "../api";
 
 export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
   const [query, setQuery] = useState("");
@@ -35,7 +35,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
         if (currentId === requestId.current) {
           setResults([]);
           setSearched(false);
-          setSearchError("MuRec2 cannot reach the API. Make sure start-backend.cmd is running.");
+          setSearchError(hostedApiEnabled ? "MuRec2 cannot reach the hosted music service. Try again shortly." : "MuRec2 cannot reach the API. Make sure start-backend.cmd is running.");
         }
       } finally {
         if (currentId === requestId.current) setLoading(false);
@@ -78,16 +78,22 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
           {!searchError && searched && results.length === 0 && (
             <div className="unknown-song">
               <strong>No catalogue match for “{query}”</strong>
-              <small>Upload a clip or song file. MuRec2 will measure its tempo, timbre, frequency spectrum, MFCCs and key, then find acoustic matches. The audio is not retained.</small>
-              <label className="upload-action">
-                {analyzing ? "Analyzing audio…" : "Choose audio file"}
-                <input
-                  type="file"
-                  accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/mp4,audio/aac,.m4a"
-                  disabled={analyzing}
-                  onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])}
-                />
-              </label>
+              {hostedApiEnabled ? (
+                <small>Try the artist name or another spelling. Audio-file analysis remains available in the local MuRec2 desktop version.</small>
+              ) : (
+                <>
+                  <small>Upload a clip or song file. MuRec2 will measure its tempo, timbre, frequency spectrum, MFCCs and key, then find acoustic matches. The audio is not retained.</small>
+                  <label className="upload-action">
+                    {analyzing ? "Analyzing audio…" : "Choose audio file"}
+                    <input
+                      type="file"
+                      accept="audio/wav,audio/mpeg,audio/flac,audio/ogg,audio/mp4,audio/aac,.m4a"
+                      disabled={analyzing}
+                      onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])}
+                    />
+                  </label>
+                </>
+              )}
             </div>
           )}
         </div>

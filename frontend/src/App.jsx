@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, logout, recordEvent, removeFavorite } from "./api";
+import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
@@ -155,7 +155,7 @@ export default function App() {
         </div>
 
         {error && <div className="notice error" role="alert">{error}</div>}
-        {!error && !selected && <div className="notice">Search the catalogue above. MuRec2 transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained.</div>}
+        {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Every available match is ranked from MuRec2’s stored audio measurements, not provider genre labels." : "Search the catalogue above. MuRec2 transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
         <div className="results-heading"><div><p className="kicker">Ranked suggestions</p><h2>{recommendations.length ? `${recommendations.length} matches` : "Recommendations will appear here"}</h2></div>{scoreMode && <p>{scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model</p>}</div>
