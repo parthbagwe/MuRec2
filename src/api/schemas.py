@@ -50,6 +50,7 @@ class RecommendRequest(BaseModel):
     track_id: str
     k: int = Field(default=10, ge=1, le=50)
     weights: Optional[dict[str, float]] = None
+    mode: str = "similar"
 
 
 class RecommendListResponse(BaseModel):

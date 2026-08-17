@@ -13,6 +13,8 @@ __pycache__/
 # Environment variables
 .env
 .env.*
+data/murec2-users.db*
+data/.session-secret
 
 # IDE
 .vscode/

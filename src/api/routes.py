@@ -16,7 +16,7 @@ from pathlib import Path
 import tempfile
 import requests
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from src.api.schemas import (
     TrackResponse, RecommendRequest, RecommendListResponse,
     SearchResponse, HealthResponse, RecommendationResponse, AnalyzeResponse,
@@ -24,6 +24,8 @@ from src.api.schemas import (
 from src.config import HYBRID_WEIGHTS
 from src.features.audio_analysis import analyze_audio
 from src.catalog import recommend_from_genres, recommend_metadata, search_apple
+from src.auth import optional_user
+from src.user_store import record_recommendation, seen_track_ids, taste_profile
 
 router = APIRouter()
 
@@ -33,6 +35,14 @@ _hybrid_model = None
 _content_model = None
 _catalog_df = None
 _live_tracks = {}
+
+RECOMMENDATION_MODES = {"similar", "adjacent", "same-era", "discover", "personalized"}
+MODE_WEIGHTS = {
+    "adjacent": {"audio": 0.60, "lyric": 0.25, "collab": 0.15},
+    "same-era": {"audio": 0.20, "lyric": 0.10, "collab": 0.70},
+    "discover": {"audio": 0.45, "lyric": 0.35, "collab": 0.20},
+    "personalized": {"audio": 0.40, "lyric": 0.20, "collab": 0.40},
+}
 
 
 def _recording_key(row) -> tuple[str, str]:
@@ -168,11 +178,13 @@ def get_track(track_id: str):
 
 
 @router.post("/recommend", response_model=RecommendListResponse)
-def recommend(req: RecommendRequest):
+def recommend(req: RecommendRequest, request: Request):
     if _hybrid_model is None:
         raise HTTPException(status_code=503, detail="Models not loaded")
 
     if req.track_id.startswith("apple-"):
+        if req.mode not in RECOMMENDATION_MODES:
+            raise HTTPException(status_code=422, detail="Unknown recommendation mode")
         anchor_match = _catalog_df[_catalog_df["track_id"].astype(str) == req.track_id]
         anchor = anchor_match.iloc[0].to_dict() if not anchor_match.empty else _live_tracks.get(req.track_id)
         if anchor is None:
@@ -182,11 +194,20 @@ def recommend(req: RecommendRequest):
             raise HTTPException(status_code=400, detail="Weights must contain non-negative genre, artist, and era values")
         if abs(sum(weights.values()) - 1.0) > 0.01:
             raise HTTPException(status_code=400, detail="Recommendation weights must sum to 1.0")
-        recs = recommend_metadata(anchor, _catalog_df, k=req.k, weights=weights)
+        user = optional_user(request)
+        user_seen = seen_track_ids(user["id"]) if user else set()
+        preferences = taste_profile(user["id"]) if user else None
+        recs = recommend_metadata(
+            anchor, _catalog_df, k=req.k, weights=weights, mode=req.mode,
+            seen_track_ids=user_seen, preferences=preferences,
+        )
+        response_weights = weights if req.mode == "similar" else MODE_WEIGHTS[req.mode]
+        if user:
+            record_recommendation(user["id"], anchor, req.mode, response_weights, recs)
         return RecommendListResponse(
             anchor=_row_to_track(anchor),
             recommendations=[RecommendationResponse(**item) for item in recs],
-            weights_used=weights,
+            weights_used=response_weights,
             total=len(recs),
         )
 

@@ -8,6 +8,8 @@ MuRec2 is an explainable music recommendation app backed by a real-song metadata
 - **Streamed previews** — 3,461 short samples that play on demand, with an animated circular visualizer.
 - **YouTube discovery** — every recommendation has a YouTube search link for the song and artist.
 - **Unknown-song analysis** — transient analysis of user-provided audio for tempo, timbre, spectral measurements, MFCCs, chroma, and key.
+- **Multiple discovery modes** — closest matches, adjacent sounds, same-era music, novelty-first discovery, and favourite-informed personalization.
+- **Local listener accounts** — password-protected accounts with favourites, automatically recorded recommendation history, and interaction signals.
 
 YouTube is the prominent listening destination. Because preview samples are supplied by Apple's Search API, the UI retains the required iTunes attribution and store-source link beside each preview. Preview audio is streamed only after a click and is never downloaded, cached, synchronized, or analyzed.
 
@@ -47,7 +49,9 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. API documentation is available at `http://localhost:8000/docs`.
+On Windows, `start-backend.cmd` and `start-frontend.cmd` launch the two services. Open `http://localhost:5173`; API documentation is available at `http://localhost:8010/docs`. Vite forwards `/api` to the local backend so signed session cookies stay same-origin during development.
+
+Account data is stored locally in `data/murec2-users.db` and is excluded from Git. Passwords use Argon2 hashes; the browser receives a signed, HttpOnly session cookie rather than an exposed token. Set `MUREC2_SECRET_KEY` for a deployed installation and `MUREC2_COOKIE_SECURE=1` when serving over HTTPS. The generated local secret and account database are not committed.
 
 The API automatically trains missing artifacts at startup, so `python train.py` is optional for the demo. Run it explicitly whenever a real dataset changes.
 
@@ -62,6 +66,10 @@ The API automatically trains missing artifacts at startup, so `python train.py` 
 | GET | `/api/similar/{track_id}` | Content-only neighbours |
 | POST | `/api/recommend` | Weighted hybrid recommendations |
 | POST | `/api/analyze` | Transiently analyze an unknown audio file and return acoustic matches |
+| POST | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout` | Local account session |
+| GET/POST/DELETE | `/api/me/favorites` | Saved tracks for the signed-in listener |
+| GET/DELETE | `/api/me/history` | Recommendation history for the signed-in listener |
+| POST | `/api/events` | Preview, selection, and YouTube interaction signals |
 
 Example request:
 
@@ -69,6 +77,7 @@ Example request:
 {
   "track_id": "demo-0001",
   "k": 10,
+  "mode": "similar",
   "weights": { "audio": 0.35, "lyric": 0.35, "collab": 0.30 }
 }
 ```

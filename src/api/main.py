@@ -22,6 +22,8 @@ from src.models.content_model import ContentModel
 from src.models.collab_model import CollabModel
 from src.models.hybrid_model import HybridModel
 from src.api.routes import router, init_routes
+from src.api.user_routes import router as user_router, init_user_routes
+from src.user_store import init_user_store
 from src.pipeline import ensure_artifacts
 from src.catalog import load_catalog
 
@@ -40,6 +42,8 @@ async def lifespan(app: FastAPI):
     catalog_df = load_catalog()
 
     init_routes(df, hybrid_model, content_model, catalog_df)
+    init_user_routes(catalog_df)
+    init_user_store()
 
     print(f"Models loaded. Serving {len(catalog_df):,} real catalogue tracks.")
     yield
@@ -62,6 +66,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.include_router(user_router, prefix="/api")
 
 
 if __name__ == "__main__":

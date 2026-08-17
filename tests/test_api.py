@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 import io
+import uuid
 import wave
 
 import numpy as np
@@ -90,3 +91,37 @@ def test_unknown_audio_is_analyzed_and_recommended():
         assert all(item["source"] == "Apple Music" for item in result["recommendations"])
         assert result["audio_profile"]["spectral_centroid_hz"] > 0
         assert 40 <= result["audio_profile"]["bpm"] <= 300
+
+
+def test_account_favorites_and_recommendation_history(monkeypatch, tmp_path):
+    import src.user_store as user_store
+    monkeypatch.setattr(user_store, "DB_PATH", tmp_path / "test-users.db")
+    email = f"test-{uuid.uuid4()}@example.test"
+    with TestClient(app) as client:
+        registration = client.post("/api/auth/register", json={
+            "display_name": "Test listener", "email": email, "password": "a-safe-test-password",
+        })
+        assert registration.status_code == 201
+        assert registration.json()["user"]["display_name"] == "Test listener"
+        assert client.get("/api/auth/me").status_code == 200
+
+        track = client.get("/api/tracks", params={"page_size": 1}).json()["results"][0]
+        favorite = client.post("/api/me/favorites", json={"track_id": track["track_id"]})
+        assert favorite.status_code == 201
+        favorites = client.get("/api/me/favorites").json()["favorites"]
+        assert favorites[0]["track_id"] == track["track_id"]
+
+        recommendation = client.post("/api/recommend", json={
+            "track_id": track["track_id"], "k": 5, "mode": "discover",
+        })
+        assert recommendation.status_code == 200
+        assert recommendation.json()["recommendations"][0]["score_mode"] == "metadata-discover"
+        history = client.get("/api/me/history").json()["history"]
+        assert history[0]["anchor_track_id"] == track["track_id"]
+        assert history[0]["mode"] == "discover"
+        assert len(history[0]["suggestions"]) == 5
+
+        assert client.delete(f"/api/me/favorites/{track['track_id']}").status_code == 204
+        assert client.get("/api/me/favorites").json()["favorites"] == []
+        assert client.post("/api/auth/logout").status_code == 204
+        assert client.get("/api/auth/me").status_code == 401

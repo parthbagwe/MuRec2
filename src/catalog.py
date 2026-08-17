@@ -103,6 +103,9 @@ def recommend_metadata(
     catalog: pd.DataFrame,
     k: int = 12,
     weights: dict[str, float] | None = None,
+    mode: str = "similar",
+    seen_track_ids: set[str] | None = None,
+    preferences: dict[str, set[str]] | None = None,
 ) -> list[dict]:
     anchor_genre = str(anchor.get("genre", "")).lower()
     anchor_subgenre = str(anchor.get("subgenre") or infer_subgenre(
@@ -113,6 +116,8 @@ def recommend_metadata(
     anchor_year = _number(anchor.get("year"), 2005)
     anchor_duration = _number(anchor.get("duration_ms"), 210_000)
     active_weights = weights or {"audio": 0.65, "lyric": 0.10, "collab": 0.25}
+    seen = seen_track_ids or set()
+    taste = preferences or {"subgenres": set(), "artists": set()}
     anchor_title_key = str(anchor.get("title", "")).casefold().strip()
     anchor_artist_key = str(anchor.get("artist", "")).casefold().strip()
     scored = []
@@ -134,12 +139,35 @@ def recommend_metadata(
         year_score = math.exp(-abs(_number(row.get("year"), anchor_year) - anchor_year) / 12)
         duration_score = math.exp(-abs(_number(row.get("duration_ms"), anchor_duration) - anchor_duration) / 120_000)
         era_score = 0.65 * year_score + 0.35 * duration_score
-        total = (
-            active_weights["audio"] * genre_score
-            + active_weights["lyric"] * artist_score
-            + active_weights["collab"] * era_score
-        )
-        scored.append(_recommendation(row, genre_score, artist_score, era_score, total, "metadata"))
+        if mode == "adjacent":
+            adjacent_score = 0.25 if genre_score == 1.0 else genre_score
+            new_artist_score = 0.1 if artist_score else 1.0
+            total = 0.60 * adjacent_score + 0.25 * new_artist_score + 0.15 * era_score
+            parts = (adjacent_score, new_artist_score, era_score, "metadata-adjacent")
+        elif mode == "same-era":
+            total = 0.20 * genre_score + 0.10 * artist_score + 0.70 * era_score
+            parts = (genre_score, artist_score, era_score, "metadata-era")
+        elif mode == "discover":
+            new_artist_score = 0.1 if artist_score else 1.0
+            repeat_penalty = 0.40 if str(row.get("track_id")) in seen else 0.0
+            total = max(0.0, 0.45 * genre_score + 0.35 * new_artist_score + 0.20 * era_score - repeat_penalty)
+            parts = (genre_score, new_artist_score, era_score, "metadata-discover")
+        elif mode == "personalized" and (taste["subgenres"] or taste["artists"]):
+            subgenre_taste = 1.0 if subgenre in taste["subgenres"] else 0.0
+            artist_taste = 1.0 if artist in taste["artists"] else 0.0
+            taste_score = min(1.0, subgenre_taste + 0.35 * artist_taste)
+            novelty_score = 0.15 if str(row.get("track_id")) in seen else 1.0
+            freshness_score = 0.625 * era_score + 0.375 * novelty_score
+            total = 0.40 * taste_score + 0.20 * genre_score + 0.40 * freshness_score
+            parts = (taste_score, genre_score, freshness_score, "metadata-personalized")
+        else:
+            total = (
+                active_weights["audio"] * genre_score
+                + active_weights["lyric"] * artist_score
+                + active_weights["collab"] * era_score
+            )
+            parts = (genre_score, artist_score, era_score, "metadata")
+        scored.append(_recommendation(row, parts[0], parts[1], parts[2], min(1.0, total), parts[3]))
     return _unique_top(scored, k)
 
 

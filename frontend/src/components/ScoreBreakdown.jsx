@@ -16,16 +16,19 @@ function Bar({ label, value, color }) {
 }
 
 export default function ScoreBreakdown({ rec }) {
-  const labels = rec.score_mode === "metadata"
-    ? ["subgenre", "artist", "era"]
-    : rec.score_mode === "acoustic-profile"
-      ? ["profile", "genre", "era"]
-      : ["audio", "lyrics", "collab"];
+  const labels = {
+    "metadata": ["subgenre", "artist", "era"],
+    "metadata-adjacent": ["adjacency", "new artist", "era"],
+    "metadata-era": ["subgenre", "artist", "era"],
+    "metadata-discover": ["subgenre", "new artist", "era"],
+    "metadata-personalized": ["your taste", "reference", "freshness"],
+    "acoustic-profile": ["profile", "genre", "era"],
+  }[rec.score_mode] || ["audio", "lyrics", "collab"];
   return (
     <div className="score-breakdown">
-      <Bar label={labels[0]} value={rec.audio_similarity} color="#ff5a36" />
-      <Bar label={labels[1]} value={rec.lyric_similarity} color="#1a9b71" />
-      <Bar label={labels[2]} value={rec.collab_similarity} color="#e7a51a" />
+      <Bar label={labels[0]} value={rec.audio_similarity} color="#b83b2f" />
+      <Bar label={labels[1]} value={rec.lyric_similarity} color="#4f6a62" />
+      <Bar label={labels[2]} value={rec.collab_similarity} color="#9b7b3c" />
     </div>
   );
 }

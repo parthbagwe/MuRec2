@@ -2,23 +2,20 @@ import { useEffect, useRef } from "react";
 import ScoreBreakdown from "./ScoreBreakdown";
 
 function youtubeSearchUrl(rec) {
-  const query = encodeURIComponent(`${rec.title} ${rec.artist} official audio`);
-  return `https://www.youtube.com/results?search_query=${query}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${rec.title} ${rec.artist} official audio`)}`;
 }
 
 function PlayIcon({ paused }) {
-  return paused ? (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
-  ) : (
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z" /></svg>
-  );
+  return paused
+    ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>;
 }
 
-function YouTubeIcon() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12s0-3.3-.4-4.9a2.6 2.6 0 0 0-1.8-1.8C18.3 5 12 5 12 5s-6.3 0-7.8.3a2.6 2.6 0 0 0-1.8 1.8C2 8.7 2 12 2 12s0 3.3.4 4.9a2.6 2.6 0 0 0 1.8 1.8c1.5.3 7.8.3 7.8.3s6.3 0 7.8-.3a2.6 2.6 0 0 0 1.8-1.8C22 15.3 22 12 22 12Zm-12 3.5v-7l6 3.5-6 3.5Z" /></svg>;
+function HeartIcon({ filled }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" fill={filled ? "currentColor" : "none"} /></svg>;
 }
 
-export default function RecommendationCard({ rec, rank, onClick, playingTrackId, onPreviewChange }) {
+export default function RecommendationCard({ rec, rank, onClick, playingTrackId, onPreviewChange, isFavorite, onToggleFavorite, onInteraction }) {
   const audioRef = useRef(null);
   const isPlaying = playingTrackId === rec.track_id;
 
@@ -43,6 +40,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
     onPreviewChange(rec.track_id);
     try {
       await audio.play();
+      onInteraction(rec, "preview_started");
     } catch {
       onPreviewChange(null);
     }
@@ -52,11 +50,14 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
 
   return (
     <article className={`recommendation-card ${isPlaying ? "is-playing" : ""}`}>
+      <div className="card-heading">
+        <span className="rank">{String(rank).padStart(2, "0")}</span>
+        <span className="score">{Math.round(rec.hybrid_score * 100)}% match</span>
+        <button className={`favorite-button ${isFavorite ? "active" : ""}`} onClick={() => onToggleFavorite(rec)} aria-label={`${isFavorite ? "Remove" : "Add"} ${rec.title} ${isFavorite ? "from" : "to"} favourites`}>
+          <HeartIcon filled={isFavorite} />
+        </button>
+      </div>
       <button className="card-main" onClick={() => onClick(rec)} aria-label={`Recommend songs like ${rec.title} by ${rec.artist}`}>
-        <div className="card-top">
-          <span className="rank">#{String(rank).padStart(2, "0")}</span>
-          <span className="score">{Math.round(rec.hybrid_score * 100)}%</span>
-        </div>
         <div className="track-identity">
           <div className="artwork-disc">
             <span className="visualizer-ring" aria-hidden="true" />
@@ -72,25 +73,12 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
           <button className="preview-button" onClick={togglePreview} aria-label={`${isPlaying ? "Pause" : "Play"} preview of ${rec.title}`}>
             <PlayIcon paused={!isPlaying} />{isPlaying ? "Pause" : "Preview"}
           </button>
-        ) : <span className="preview-unavailable">Preview unavailable</span>}
-        <a className="youtube-button" href={youtubeSearchUrl(rec)} target="_blank" rel="noreferrer" aria-label={`Find ${rec.title} by ${rec.artist} on YouTube`}>
-          <YouTubeIcon />YouTube
-        </a>
+        ) : <span className="preview-unavailable">No preview</span>}
+        <a className="youtube-button" href={youtubeSearchUrl(rec)} target="_blank" rel="noreferrer" onClick={() => onInteraction(rec, "youtube_opened")}>YouTube ↗</a>
       </div>
-
+      {rec.preview_url && <small className="preview-credit">30-second preview courtesy of iTunes</small>}
       {rec.preview_url && (
-        <small className="preview-credit">
-          Preview provided courtesy of iTunes · <a href={rec.external_url} target="_blank" rel="noreferrer">store source</a>
-        </small>
-      )}
-      {rec.preview_url && (
-        <audio
-          ref={audioRef}
-          src={rec.preview_url}
-          preload="none"
-          onEnded={() => onPreviewChange(null)}
-          onPause={() => isPlaying && audioRef.current?.currentTime > 0 && onPreviewChange(null)}
-        />
+        <audio ref={audioRef} src={rec.preview_url} preload="none" onEnded={() => { onPreviewChange(null); onInteraction(rec, "preview_completed"); }} onPause={() => isPlaying && audioRef.current?.currentTime > 0 && onPreviewChange(null)} />
       )}
     </article>
   );
