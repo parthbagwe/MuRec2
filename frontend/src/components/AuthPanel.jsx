@@ -7,10 +7,11 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open) setError("");
+    if (open) { setError(""); setMessage(""); }
   }, [open]);
 
   if (!open) return null;
@@ -19,10 +20,16 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
     event.preventDefault();
     setSubmitting(true);
     setError("");
+    setMessage("");
     try {
       const response = mode === "register"
         ? await register(displayName, email, password)
         : await login(email, password);
+      if (response.data.confirmation_required) {
+        setMessage("Check your email and confirm your MuRec2 account, then return here to sign in.");
+        setPassword("");
+        return;
+      }
       onAuthenticated(response.data.user);
       setPassword("");
       onClose();
@@ -39,7 +46,7 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
         <button className="modal-close" onClick={onClose} aria-label="Close sign in">×</button>
         <p className="kicker">Your MuRec2 account</p>
         <h2 id="auth-title">{mode === "login" ? "Welcome back" : "Save your listening trail"}</h2>
-        <p className="modal-copy">Favourites and recommendation history are stored only in this local MuRec2 installation.</p>
+        <p className="modal-copy">Favourites and recommendation history are securely synced to your MuRec2 cloud account.</p>
 
         <div className="auth-tabs" aria-label="Account action">
           <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Sign in</button>
@@ -54,6 +61,7 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
           <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={mode === "register" ? 8 : 1} required /></label>
           {mode === "register" && <small>Use at least 8 characters.</small>}
           {error && <p className="form-error" role="alert">{error}</p>}
+          {message && <p className="form-message" role="status">{message}</p>}
           <button className="primary-button" type="submit" disabled={submitting}>{submitting ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}</button>
         </form>
       </section>

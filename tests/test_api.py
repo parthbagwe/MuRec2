@@ -169,5 +169,21 @@ def test_account_favorites_and_recommendation_history(monkeypatch, tmp_path):
 
         assert client.delete(f"/api/me/favorites/{track['track_id']}").status_code == 204
         assert client.get("/api/me/favorites").json()["favorites"] == []
+
+        from src.api import routes
+        live_track_id = "apple-live-favorite-test"
+        routes._live_tracks[live_track_id] = {
+            "track_id": live_track_id, "title": "Live lookup song", "artist": "Live artist",
+            "album": "Live album", "year": 2026, "artwork_url": None,
+            "preview_url": "https://example.test/preview.m4a",
+            "external_url": "https://youtube.com/results?search_query=live+lookup+song",
+            "source": "Live lookup",
+        }
+        try:
+            assert client.post("/api/me/favorites", json={"track_id": live_track_id}).status_code == 201
+            assert client.get("/api/me/favorites").json()["favorites"][0]["track_id"] == live_track_id
+        finally:
+            routes._live_tracks.pop(live_track_id, None)
+
         assert client.post("/api/auth/logout").status_code == 204
         assert client.get("/api/auth/me").status_code == 401

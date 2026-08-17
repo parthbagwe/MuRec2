@@ -1,8 +1,17 @@
 import axios from "axios";
+import { createAccount, currentAccount, signIn, signOut, supabase, supabaseEnabled } from "./supabase";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
   withCredentials: true,
+});
+
+api.interceptors.request.use(async (config) => {
+  if (supabaseEnabled) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token) config.headers.Authorization = `Bearer ${data.session.access_token}`;
+  }
+  return config;
 });
 
 export const searchTracks = (q, genre, page = 1) =>
@@ -33,15 +42,19 @@ export const analyzeUnknown = (file, title, k = 12) => {
   });
 };
 
-export const register = (display_name, email, password) =>
-  api.post("/auth/register", { display_name, email, password });
+export const register = async (display_name, email, password) => {
+  if (!supabaseEnabled) return api.post("/auth/register", { display_name, email, password });
+  return { data: await createAccount(display_name, email, password) };
+};
 
-export const login = (email, password) =>
-  api.post("/auth/login", { email, password });
+export const login = async (email, password) => {
+  if (!supabaseEnabled) return api.post("/auth/login", { email, password });
+  return { data: { user: await signIn(email, password) } };
+};
 
-export const logout = () => api.post("/auth/logout");
+export const logout = () => supabaseEnabled ? signOut() : api.post("/auth/logout");
 
-export const getMe = () => api.get("/auth/me");
+export const getMe = async () => supabaseEnabled ? { data: { user: await currentAccount() } } : api.get("/auth/me");
 
 export const getFavorites = () => api.get("/me/favorites");
 

@@ -9,7 +9,7 @@ MuRec2 is an explainable, provider-neutral acoustic recommendation app. Pick a t
 - **YouTube discovery** — every recommendation has a YouTube search link for the song and artist.
 - **Unknown-song analysis** — transient analysis of user-provided audio for tempo, timbre, spectral measurements, MFCCs, chroma, and key.
 - **Multiple discovery modes** — balanced similarity, rhythm-first, timbre-first, novelty-first, and favourite-informed acoustic personalization.
-- **Local listener accounts** — password-protected accounts with favourites, automatically recorded recommendation history, and interaction signals.
+- **Cloud listener accounts** — Supabase Auth accounts with favourites, automatically recorded recommendation history, and interaction signals protected by row-level security.
 
 YouTube is the prominent listening destination. Apple is used only for catalogue lookup, artwork, and available preview audio. MuRec2 does not use Apple's genre or subgenre classifications in ranking. Preview audio used for fingerprinting is downloaded to a temporary file, analyzed locally, and deleted immediately; only numerical features and MuRec2's category signature are retained.
 
@@ -25,7 +25,7 @@ catalogue lookup -> transient audio decode -> 35-D fingerprint + deep sound prof
                          discovery mode + favourite fingerprints -> FastAPI -> React
 ```
 
-The committed lookup catalogue lives at `data/catalog/apple_tracks.csv`. Its provider genre columns are ignored by the acoustic recommender. The resumable derived-feature index lives at `data/acoustic-fingerprints.db` and is excluded from Git. `start-backend.cmd` builds it gradually in the background; keep the backend open and the available candidate library improves continuously.
+The committed lookup catalogue lives at `data/catalog/apple_tracks.csv`. Its provider genre columns are ignored by the acoustic recommender. The resumable derived-feature index lives at `data/acoustic-fingerprints.db` and is excluded from Git. Catalogue metadata and derived fingerprints are also stored in Supabase; raw audio is not uploaded. `start-backend.cmd` builds the local index gradually in the background, and mirrors new fingerprints when a backend-only Supabase secret key is configured.
 
 Build or resume the full index manually:
 
@@ -58,9 +58,15 @@ npm install
 npm run dev
 ```
 
-On Windows, `start-backend.cmd` and `start-frontend.cmd` launch the two services. Open `http://localhost:5173`; API documentation is available at `http://localhost:8010/docs`. Vite forwards `/api` to the local backend so signed session cookies stay same-origin during development.
+On Windows, `start-backend.cmd` and `start-frontend.cmd` launch the two services. Open `http://localhost:5173`; API documentation is available at `http://localhost:8010/docs`. Vite forwards `/api` to the local backend. Supabase Auth maintains the browser session; API requests include its access token, which the backend verifies with Supabase before performing user-owned writes under row-level security.
 
-Account data is stored locally in `data/murec2-users.db` and is excluded from Git. Passwords use Argon2 hashes; the browser receives a signed, HttpOnly session cookie rather than an exposed token. Set `MUREC2_SECRET_KEY` for a deployed installation and `MUREC2_COOKIE_SECURE=1` when serving over HTTPS. The generated local secret and account database are not committed.
+Copy `.env.example` and `frontend/.env.example` to their local equivalents and set the project URL plus publishable key. The publishable key is safe in the browser because every exposed table has explicit grants and row-level security policies. Never place a Supabase secret/service-role key in `frontend/`, a `VITE_` variable, or committed source.
+
+The local `data/murec2-users.db` path remains only as an offline/test fallback. Production accounts, profiles, favourites, recommendation runs/items, and interactions live in Supabase. Catalogue maintenance can be run from a trusted backend terminal after setting `MUREC2_SUPABASE_SECRET_KEY`:
+
+```bash
+python scripts/sync_supabase.py
+```
 
 The API automatically trains missing artifacts at startup, so `python train.py` is optional for the demo. Run it explicitly whenever a real dataset changes.
 
@@ -76,7 +82,7 @@ The API automatically trains missing artifacts at startup, so `python train.py` 
 | GET | `/api/similar/{track_id}` | Content-only neighbours |
 | POST | `/api/recommend` | Provider-neutral acoustic recommendations |
 | POST | `/api/analyze` | Transiently analyze an unknown audio file and return acoustic matches |
-| POST | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout` | Local account session |
+| POST | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout` | Offline/local fallback account session |
 | GET/POST/DELETE | `/api/me/favorites` | Saved tracks for the signed-in listener |
 | GET/DELETE | `/api/me/history` | Recommendation history for the signed-in listener |
 | POST | `/api/events` | Preview, selection, and YouTube interaction signals |

@@ -13,6 +13,7 @@ from pwdlib import PasswordHash
 
 from src.config import ROOT_DIR
 from src.user_store import get_user
+from src import supabase_store
 
 COOKIE_NAME = "murec2_session"
 SESSION_DAYS = 30
@@ -57,6 +58,10 @@ def clear_session(response: Response) -> None:
 
 
 def optional_user(request: Request) -> dict | None:
+    authorization = request.headers.get("Authorization", "")
+    if supabase_store.configured() and authorization.startswith("Bearer "):
+        access_token = authorization.removeprefix("Bearer ").strip()
+        return supabase_store.verify_access_token(access_token) if access_token else None
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         return None

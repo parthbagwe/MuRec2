@@ -219,8 +219,9 @@ def recommend(req: RecommendRequest, request: Request):
         if abs(sum(weights.values()) - 1.0) > 0.01:
             raise HTTPException(status_code=400, detail="Recommendation weights must sum to 1.0")
         user = optional_user(request)
-        user_seen = seen_track_ids(user["id"]) if user else set()
-        preferences = taste_profile(user["id"]) if user else None
+        access_token = user.get("_access_token") if user else None
+        user_seen = seen_track_ids(user["id"], access_token) if user else set()
+        preferences = taste_profile(user["id"], access_token) if user else None
         if _acoustic_index is None:
             raise HTTPException(status_code=503, detail="Acoustic fingerprint index is unavailable")
         try:
@@ -244,7 +245,7 @@ def recommend(req: RecommendRequest, request: Request):
             anchor["analysis_status"] = "complete"
         response_weights = weights if req.mode == "similar" else MODE_WEIGHTS[req.mode]
         if user:
-            record_recommendation(user["id"], anchor, req.mode, response_weights, recs)
+            record_recommendation(user["id"], anchor, req.mode, response_weights, recs, access_token)
         return RecommendListResponse(
             anchor=_row_to_track(anchor),
             recommendations=[RecommendationResponse(**item) for item in recs],

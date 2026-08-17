@@ -18,6 +18,7 @@ import requests
 
 from src.config import ROOT_DIR
 from src.features.audio_analysis import analyze_audio
+from src import supabase_store
 
 INDEX_PATH = ROOT_DIR / "data" / "acoustic-fingerprints.db"
 MAX_PREVIEW_BYTES = 15 * 1024 * 1024
@@ -109,6 +110,10 @@ class AcousticIndex:
                   acoustic_signature=excluded.acoustic_signature, analyzed_at=CURRENT_TIMESTAMP
             """, (str(track_id), json.dumps(vector.tolist()), json.dumps(profile), signature))
             db.execute("DELETE FROM failures WHERE track_id=?", (str(track_id),))
+        try:
+            supabase_store.sync_fingerprint(str(track_id), vector.tolist(), profile, signature)
+        except (requests.RequestException, supabase_store.SupabaseStoreError) as error:
+            print(f"Supabase fingerprint sync warning: {error}")
         return {"track_id": str(track_id), "vector": vector, "profile": profile, "acoustic_signature": signature}
 
     def record_failure(self, track_id: str, error: Exception) -> None:

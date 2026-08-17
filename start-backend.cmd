@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+if exist ".env.local.cmd" call ".env.local.cmd"
 if not exist ".venv\Scripts\python.exe" (
   echo Python environment is missing. Run setup-windows.cmd first.
   pause

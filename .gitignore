@@ -13,6 +13,8 @@ __pycache__/
 # Environment variables
 .env
 .env.*
+!.env.example
+!frontend/.env.example
 data/murec2-users.db*
 data/.session-secret
 data/acoustic-fingerprints.db*

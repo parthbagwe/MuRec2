@@ -10,6 +10,7 @@ import sqlite3
 import uuid
 
 from src.config import ROOT_DIR
+from src import supabase_store
 
 DB_PATH = ROOT_DIR / "data" / "murec2-users.db"
 
@@ -114,7 +115,10 @@ def get_user_with_password(email: str) -> dict | None:
     return dict(row) if row else None
 
 
-def add_favorite(user_id: str, track: dict) -> None:
+def add_favorite(user_id: str, track: dict, access_token: str | None = None) -> None:
+    if access_token and supabase_store.configured():
+        supabase_store.add_favorite(user_id, track, access_token)
+        return
     with connection() as db:
         db.execute("""
             INSERT INTO favorites(user_id,track_id,title,artist,subgenre,artwork_url,preview_url,external_url,created_at)
@@ -129,12 +133,17 @@ def add_favorite(user_id: str, track: dict) -> None:
         ))
 
 
-def remove_favorite(user_id: str, track_id: str) -> None:
+def remove_favorite(user_id: str, track_id: str, access_token: str | None = None) -> None:
+    if access_token and supabase_store.configured():
+        supabase_store.remove_favorite(user_id, track_id, access_token)
+        return
     with connection() as db:
         db.execute("DELETE FROM favorites WHERE user_id=? AND track_id=?", (user_id, track_id))
 
 
-def list_favorites(user_id: str) -> list[dict]:
+def list_favorites(user_id: str, access_token: str | None = None) -> list[dict]:
+    if access_token and supabase_store.configured():
+        return supabase_store.list_favorites(access_token)
     with connection() as db:
         rows = db.execute(
             "SELECT track_id,title,artist,subgenre,artwork_url,preview_url,external_url,created_at FROM favorites WHERE user_id=? ORDER BY created_at DESC",
@@ -143,7 +152,12 @@ def list_favorites(user_id: str) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def record_recommendation(user_id: str, anchor: dict, mode: str, weights: dict, items: list[dict]) -> None:
+def record_recommendation(
+    user_id: str, anchor: dict, mode: str, weights: dict, items: list[dict], access_token: str | None = None,
+) -> None:
+    if access_token and supabase_store.configured():
+        supabase_store.record_recommendation(user_id, anchor, mode, weights, items, access_token)
+        return
     with connection() as db:
         cursor = db.execute("""
             INSERT INTO recommendation_runs(user_id,anchor_track_id,anchor_title,anchor_artist,mode,weights_json,created_at)
@@ -162,7 +176,9 @@ def record_recommendation(user_id: str, anchor: dict, mode: str, weights: dict, 
         ])
 
 
-def list_history(user_id: str, limit: int = 30) -> list[dict]:
+def list_history(user_id: str, limit: int = 30, access_token: str | None = None) -> list[dict]:
+    if access_token and supabase_store.configured():
+        return supabase_store.list_history(access_token, limit)
     with connection() as db:
         runs = db.execute("""
             SELECT id,anchor_track_id,anchor_title,anchor_artist,mode,created_at
@@ -178,13 +194,21 @@ def list_history(user_id: str, limit: int = 30) -> list[dict]:
     return result
 
 
-def clear_history(user_id: str) -> None:
+def clear_history(user_id: str, access_token: str | None = None) -> None:
+    if access_token and supabase_store.configured():
+        supabase_store.clear_history(user_id, access_token)
+        return
     with connection() as db:
         db.execute("DELETE FROM recommendation_runs WHERE user_id=?", (user_id,))
         db.execute("DELETE FROM interactions WHERE user_id=?", (user_id,))
 
 
-def record_interaction(user_id: str, track_id: str, event_type: str, value: float | None = None) -> None:
+def record_interaction(
+    user_id: str, track_id: str, event_type: str, value: float | None = None, access_token: str | None = None,
+) -> None:
+    if access_token and supabase_store.configured():
+        supabase_store.record_interaction(user_id, track_id, event_type, value, access_token)
+        return
     with connection() as db:
         db.execute(
             "INSERT INTO interactions(user_id,track_id,event_type,value,created_at) VALUES(?,?,?,?,?)",
@@ -192,7 +216,9 @@ def record_interaction(user_id: str, track_id: str, event_type: str, value: floa
         )
 
 
-def seen_track_ids(user_id: str) -> set[str]:
+def seen_track_ids(user_id: str, access_token: str | None = None) -> set[str]:
+    if access_token and supabase_store.configured():
+        return supabase_store.seen_track_ids(access_token)
     with connection() as db:
         rows = db.execute("""
             SELECT track_id FROM recommendation_items ri
@@ -202,7 +228,9 @@ def seen_track_ids(user_id: str) -> set[str]:
     return {str(row["track_id"]) for row in rows}
 
 
-def taste_profile(user_id: str) -> dict[str, set[str]]:
+def taste_profile(user_id: str, access_token: str | None = None) -> dict[str, set[str]]:
+    if access_token and supabase_store.configured():
+        return supabase_store.taste_profile(access_token)
     favorites = list_favorites(user_id)
     return {
         "subgenres": {str(item["subgenre"]).lower() for item in favorites if item.get("subgenre")},
