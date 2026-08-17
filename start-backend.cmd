@@ -21,6 +21,7 @@ echo.
 echo Please wait. The first start after an update may rebuild the recommendation models.
 echo Keep this window open while using MuRec2.
 echo.
+set "MUREC2_AUTO_INDEX=1"
 ".venv\Scripts\python.exe" -m uvicorn src.api.main:app --host 127.0.0.1 --port 8010
 set "exit_code=%errorlevel%"
 echo.

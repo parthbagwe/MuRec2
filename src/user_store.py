@@ -207,4 +207,5 @@ def taste_profile(user_id: str) -> dict[str, set[str]]:
     return {
         "subgenres": {str(item["subgenre"]).lower() for item in favorites if item.get("subgenre")},
         "artists": {str(item["artist"]).lower() for item in favorites if item.get("artist")},
+        "track_ids": {str(item["track_id"]) for item in favorites},
     }

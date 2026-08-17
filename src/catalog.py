@@ -36,12 +36,10 @@ def _normalize(result: dict) -> dict | None:
     if not all((track_id, title, artist, external_url)):
         return None
     release = str(result.get("releaseDate", ""))
-    genre = result.get("primaryGenreName") or "Music"
-    subgenre = infer_subgenre(artist, genre, genre.lower(), title)
     return {
         "track_id": f"apple-{track_id}", "title": title, "artist": artist,
-        "album": result.get("collectionName", ""), "genre": genre, "subgenre": subgenre,
-        "seed_genre": genre.lower(),
+        "album": result.get("collectionName", ""), "genre": "Audio analysis pending", "subgenre": None,
+        "seed_genre": "",
         "year": int(release[:4]) if release[:4].isdigit() else None,
         "duration_ms": result.get("trackTimeMillis"),
         "artwork_url": result.get("artworkUrl100", ""),

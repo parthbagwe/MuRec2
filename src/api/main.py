@@ -10,6 +10,7 @@ k-NN index and latent factors are in-memory structures.
 """
 
 from contextlib import asynccontextmanager
+import os
 import pandas as pd
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +27,7 @@ from src.api.user_routes import router as user_router, init_user_routes
 from src.user_store import init_user_store
 from src.pipeline import ensure_artifacts
 from src.catalog import load_catalog
+from src.acoustic_index import AcousticIndex
 
 
 @asynccontextmanager
@@ -40,10 +42,14 @@ async def lifespan(app: FastAPI):
     collab_model = CollabModel.load(COLLAB_MODEL_PATH)
     hybrid_model = HybridModel(content_model, collab_model)
     catalog_df = load_catalog()
+    acoustic_index = AcousticIndex()
 
-    init_routes(df, hybrid_model, content_model, catalog_df)
-    init_user_routes(catalog_df)
+    init_routes(df, hybrid_model, content_model, catalog_df, acoustic_index)
+    init_user_routes(catalog_df, acoustic_index)
     init_user_store()
+
+    if os.getenv("MUREC2_AUTO_INDEX", "0") == "1":
+        acoustic_index.start_background_build(catalog_df)
 
     print(f"Models loaded. Serving {len(catalog_df):,} real catalogue tracks.")
     yield
@@ -52,8 +58,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Music Recommendation API",
-    description="Hybrid music recommendation system — audio + lyrics + collaborative filtering",
-    version="1.0.0",
+    description="Provider-neutral acoustic fingerprint music recommendation system",
+    version="2.1.0",
     lifespan=lifespan,
 )
 

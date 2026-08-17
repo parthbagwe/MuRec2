@@ -16,14 +16,16 @@ function Bar({ label, value, color }) {
 }
 
 export default function ScoreBreakdown({ rec }) {
-  const labels = {
+  const labels = rec.score_mode?.startsWith("acoustic-fingerprint")
+    ? ["rhythm", "timbre", "harmony"]
+    : ({
     "metadata": ["subgenre", "artist", "era"],
     "metadata-adjacent": ["adjacency", "new artist", "era"],
     "metadata-era": ["subgenre", "artist", "era"],
     "metadata-discover": ["subgenre", "new artist", "era"],
     "metadata-personalized": ["your taste", "reference", "freshness"],
     "acoustic-profile": ["profile", "genre", "era"],
-  }[rec.score_mode] || ["audio", "lyrics", "collab"];
+    }[rec.score_mode] || ["audio", "lyrics", "collab"]);
   return (
     <div className="score-breakdown">
       <Bar label={labels[0]} value={rec.audio_similarity} color="#b83b2f" />

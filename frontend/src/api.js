@@ -20,6 +20,8 @@ export const getSimilar = (track_id, k = 10) =>
 export const getGenres = () =>
   api.get("/genres");
 
+export const getAcousticStatus = () => api.get("/acoustic-index/status");
+
 export const analyzeUnknown = (file, title, k = 12) => {
   const form = new FormData();
   form.append("file", file);

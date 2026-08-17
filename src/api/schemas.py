@@ -25,6 +25,8 @@ class TrackResponse(BaseModel):
     preview_url: Optional[str] = None
     external_url: Optional[str] = None
     source: Optional[str] = None
+    acoustic_signature: Optional[str] = None
+    analysis_status: str = "pending"
 
 
 class RecommendationResponse(BaseModel):
@@ -70,6 +72,8 @@ class HealthResponse(BaseModel):
     status: str
     models_loaded: bool
     total_tracks: int
+    acoustic_indexed: int = 0
+    acoustic_indexing: bool = False
 
 
 class AudioProfileResponse(BaseModel):
@@ -81,6 +85,26 @@ class AudioProfileResponse(BaseModel):
     zero_crossing_rate: float
     key: str
     timbre: str
+    tempo_band: Optional[str] = None
+    intensity: Optional[str] = None
+    texture: Optional[str] = None
+    rhythm_character: Optional[str] = None
+    harmonic_character: Optional[str] = None
+    acoustic_signature: Optional[str] = None
+    onset_density: Optional[float] = None
+    beat_regularity: Optional[float] = None
+    harmonic_ratio: Optional[float] = None
+    percussive_ratio: Optional[float] = None
+    danceability: Optional[float] = None
+    aggression: Optional[float] = None
+
+
+class AcousticIndexStatusResponse(BaseModel):
+    indexed: int
+    total: int
+    remaining: int
+    failures: int
+    building: bool
 
 
 class AnalyzeResponse(BaseModel):

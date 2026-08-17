@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { addFavorite, analyzeUnknown, clearHistory, getFavorites, getHistory, getMe, getRecommendations, logout, recordEvent, removeFavorite } from "./api";
+import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, logout, recordEvent, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
 import SearchBar from "./components/SearchBar";
 
-const DEFAULT_WEIGHTS = { audio: 0.65, lyric: 0.1, collab: 0.25 };
+const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
-  { id: "similar", label: "Closest", description: "Same subgenre, artist context, and era" },
-  { id: "adjacent", label: "Adjacent", description: "A nearby sound without repeating the exact lane" },
-  { id: "same-era", label: "Same era", description: "Music shaped by a similar point in time" },
-  { id: "discover", label: "Surprise me", description: "More new artists and less repetition" },
-  { id: "personalized", label: "For you", description: "Uses the artists and subgenres in your favourites" },
+  { id: "similar", label: "Closest", description: "Balanced rhythm, timbre, texture, and harmony" },
+  { id: "rhythm", label: "Rhythm", description: "Tempo, onset pattern, pulse, and percussion" },
+  { id: "timbre", label: "Timbre", description: "Spectral texture, brightness, density, and MFCC shape" },
+  { id: "discover", label: "Surprise me", description: "A new artist at a believable acoustic distance" },
+  { id: "personalized", label: "For you", description: "Compares the audio fingerprints in your favourites" },
 ];
 
 export default function App() {
@@ -29,12 +29,17 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [authOpen, setAuthOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [indexStatus, setIndexStatus] = useState(null);
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
-  const weightLabels = selected?.source === "Apple Music" ? { audio: "subgenre", lyric: "artist", collab: "era" } : { audio: "audio", lyric: "lyric", collab: "collab" };
+  const weightLabels = { audio: "rhythm", lyric: "timbre", collab: "harmony" };
 
   useEffect(() => {
     getMe().then((response) => { setUser(response.data.user); refreshLibrary(); }).catch(() => {});
+    const updateIndexStatus = () => getAcousticStatus().then((response) => setIndexStatus(response.data)).catch(() => {});
+    updateIndexStatus();
+    const timer = window.setInterval(updateIndexStatus, 10000);
+    return () => window.clearInterval(timer);
   }, []);
 
   async function refreshLibrary() {
@@ -126,10 +131,11 @@ export default function App() {
       </header>
 
       <section className="intro-section" id="top">
-        <p className="kicker">Explainable music discovery</p>
-        <h1>Recommendations with a reason.</h1>
-        <p>Search a track, decide how far you want to wander, and hear a preview before opening YouTube.</p>
+        <p className="kicker">Provider-neutral acoustic discovery</p>
+        <h1>Matched by sound, not a genre tag.</h1>
+        <p>MuRec2 listens to available audio and compares rhythm, timbre, texture, dynamics, and harmony. Apple supplies catalogue lookup and previews—not the categories.</p>
         <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
+        {indexStatus && <p className="index-status">Acoustic library: {indexStatus.indexed.toLocaleString()} of {indexStatus.total.toLocaleString()} songs analyzed{indexStatus.building ? " · listening in the background" : ""}</p>}
       </section>
 
       <section className="workspace">
@@ -149,8 +155,8 @@ export default function App() {
         </div>
 
         {error && <div className="notice error" role="alert">{error}</div>}
-        {!error && !selected && <div className="notice">Search the real-song catalogue above. If a track is missing, upload audio and MuRec2 will compare its tempo, timbre, key, and frequency profile.</div>}
-        {audioProfile && <div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>timbre</span><strong>{audioProfile.timbre}</strong></div><div><span>key</span><strong>{audioProfile.key}</strong></div><div><span>centroid</span><strong>{Math.round(audioProfile.spectral_centroid_hz)} Hz</strong></div><div><span>rolloff</span><strong>{Math.round(audioProfile.spectral_rolloff_hz)} Hz</strong></div><div><span>energy</span><strong>{Math.round(audioProfile.energy)}%</strong></div></div>}
+        {!error && !selected && <div className="notice">Search the catalogue above. MuRec2 transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained.</div>}
+        {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
         <div className="results-heading"><div><p className="kicker">Ranked suggestions</p><h2>{recommendations.length ? `${recommendations.length} matches` : "Recommendations will appear here"}</h2></div>{scoreMode && <p>{scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model</p>}</div>
         <div className="recommendation-grid">
@@ -158,7 +164,7 @@ export default function App() {
         </div>
       </section>
 
-      <footer><span>MuRec2 · Real catalogue metadata · Uploaded audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
+      <footer><span>MuRec2 · Categories derived locally from audio · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={(track) => recommend(track)} />
     </main>

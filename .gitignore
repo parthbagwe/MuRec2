@@ -15,6 +15,7 @@ __pycache__/
 .env.*
 data/murec2-users.db*
 data/.session-secret
+data/acoustic-fingerprints.db*
 
 # IDE
 .vscode/

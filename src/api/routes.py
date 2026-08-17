@@ -20,10 +20,12 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from src.api.schemas import (
     TrackResponse, RecommendRequest, RecommendListResponse,
     SearchResponse, HealthResponse, RecommendationResponse, AnalyzeResponse,
+    AcousticIndexStatusResponse,
 )
 from src.config import HYBRID_WEIGHTS
 from src.features.audio_analysis import analyze_audio
-from src.catalog import recommend_from_genres, recommend_metadata, search_apple
+from src.catalog import search_apple
+from src.acoustic_index import MODE_WEIGHTS as ACOUSTIC_MODE_WEIGHTS
 from src.auth import optional_user
 from src.user_store import record_recommendation, seen_track_ids, taste_profile
 
@@ -35,13 +37,12 @@ _hybrid_model = None
 _content_model = None
 _catalog_df = None
 _live_tracks = {}
+_acoustic_index = None
 
-RECOMMENDATION_MODES = {"similar", "adjacent", "same-era", "discover", "personalized"}
+RECOMMENDATION_MODES = {"similar", "rhythm", "timbre", "discover", "personalized"}
 MODE_WEIGHTS = {
-    "adjacent": {"audio": 0.60, "lyric": 0.25, "collab": 0.15},
-    "same-era": {"audio": 0.20, "lyric": 0.10, "collab": 0.70},
-    "discover": {"audio": 0.45, "lyric": 0.35, "collab": 0.20},
-    "personalized": {"audio": 0.40, "lyric": 0.20, "collab": 0.40},
+    name: {"audio": values[0], "lyric": values[1], "collab": values[2]}
+    for name, values in ACOUSTIC_MODE_WEIGHTS.items()
 }
 
 
@@ -52,12 +53,13 @@ def _recording_key(row) -> tuple[str, str]:
     )
 
 
-def init_routes(df, hybrid_model, content_model, catalog_df):
-    global _df, _hybrid_model, _content_model, _catalog_df
+def init_routes(df, hybrid_model, content_model, catalog_df, acoustic_index=None):
+    global _df, _hybrid_model, _content_model, _catalog_df, _acoustic_index
     _df = df
     _hybrid_model = hybrid_model
     _content_model = content_model
     _catalog_df = catalog_df
+    _acoustic_index = acoustic_index
 
 
 def _row_to_track(row) -> TrackResponse:
@@ -67,12 +69,13 @@ def _row_to_track(row) -> TrackResponse:
             return None
         return cast(value) if cast else value
 
+    fingerprint = _acoustic_index.get(str(row["track_id"])) if _acoustic_index else None
     return TrackResponse(
         track_id=row["track_id"],
         title=row["title"],
         artist=row["artist"],
-        genre=row["genre"],
-        subgenre=optional("subgenre"),
+        genre="MuRec2 acoustic" if fingerprint else "Audio analysis pending",
+        subgenre=fingerprint["acoustic_signature"] if fingerprint else None,
         year=optional("year", int),
         bpm=optional("bpm", int),
         energy=optional("energy", int),
@@ -86,32 +89,47 @@ def _row_to_track(row) -> TrackResponse:
         preview_url=optional("preview_url"),
         external_url=optional("external_url"),
         source=optional("source"),
+        acoustic_signature=fingerprint["acoustic_signature"] if fingerprint else None,
+        analysis_status="complete" if fingerprint else "pending",
     )
 
 
 @router.get("/health", response_model=HealthResponse)
 def health():
+    index_status = _acoustic_index.status(len(_catalog_df)) if _acoustic_index and _catalog_df is not None else {"indexed": 0, "building": False}
     return HealthResponse(
         status="ok",
         models_loaded=_hybrid_model is not None,
         total_tracks=len(_catalog_df) if _catalog_df is not None else 0,
+        acoustic_indexed=index_status["indexed"],
+        acoustic_indexing=index_status["building"],
     )
+
+
+@router.get("/acoustic-index/status", response_model=AcousticIndexStatusResponse)
+def acoustic_index_status():
+    if _acoustic_index is None or _catalog_df is None:
+        raise HTTPException(status_code=503, detail="Acoustic index is not loaded")
+    return _acoustic_index.status(len(_catalog_df))
 
 
 @router.get("/genres")
 def get_genres():
     if _catalog_df is None or _catalog_df.empty:
         raise HTTPException(status_code=503, detail="Models not loaded")
+    fingerprints = _acoustic_index.all() if _acoustic_index else {}
+    profiles = [item["profile"] for item in fingerprints.values()]
     return {
-        "genres": sorted(_catalog_df["genre"].dropna().unique().tolist()),
-        "subgenres": sorted(_catalog_df["subgenre"].dropna().unique().tolist()),
+        "genres": sorted({profile["texture"] for profile in profiles}),
+        "subgenres": sorted({item["acoustic_signature"] for item in fingerprints.values()}),
+        "dimensions": ["tempo", "intensity", "texture", "rhythm character", "harmonic character"],
     }
 
 
 @router.get("/tracks", response_model=SearchResponse)
 def get_tracks(
     q: str = Query(default="", description="Search by title or artist"),
-    genre: str = Query(default="", description="Filter by genre"),
+    genre: str = Query(default="", description="Filter by a MuRec2-derived acoustic category"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
@@ -129,7 +147,13 @@ def get_tracks(
         filtered = filtered[mask]
 
     if genre:
-        filtered = filtered[filtered["genre"].str.lower() == genre.lower()]
+        fingerprints = _acoustic_index.all() if _acoustic_index else {}
+        category = genre.casefold().strip()
+        matching_ids = {
+            track_id for track_id, item in fingerprints.items()
+            if category in item["acoustic_signature"].casefold()
+        }
+        filtered = filtered[filtered["track_id"].astype(str).isin(matching_ids)]
 
     # Apple often exposes the same recording on several album editions.
     filtered = filtered.assign(
@@ -189,18 +213,35 @@ def recommend(req: RecommendRequest, request: Request):
         anchor = anchor_match.iloc[0].to_dict() if not anchor_match.empty else _live_tracks.get(req.track_id)
         if anchor is None:
             raise HTTPException(status_code=404, detail=f"Track '{req.track_id}' not found")
-        weights = req.weights or {"audio": 0.65, "lyric": 0.10, "collab": 0.25}
+        weights = req.weights or MODE_WEIGHTS["similar"]
         if set(weights) != set(HYBRID_WEIGHTS) or any(value < 0 for value in weights.values()):
-            raise HTTPException(status_code=400, detail="Weights must contain non-negative genre, artist, and era values")
+            raise HTTPException(status_code=400, detail="Weights must contain non-negative rhythm, timbre, and harmony values")
         if abs(sum(weights.values()) - 1.0) > 0.01:
             raise HTTPException(status_code=400, detail="Recommendation weights must sum to 1.0")
         user = optional_user(request)
         user_seen = seen_track_ids(user["id"]) if user else set()
         preferences = taste_profile(user["id"]) if user else None
-        recs = recommend_metadata(
-            anchor, _catalog_df, k=req.k, weights=weights, mode=req.mode,
-            seen_track_ids=user_seen, preferences=preferences,
-        )
+        if _acoustic_index is None:
+            raise HTTPException(status_code=503, detail="Acoustic fingerprint index is unavailable")
+        try:
+            _acoustic_index.ensure_minimum(_catalog_df, minimum=max(req.k + 6, 18))
+            recs = _acoustic_index.recommendations(
+                anchor, _catalog_df, k=req.k, mode=req.mode, seen_track_ids=user_seen,
+                favorite_track_ids=preferences.get("track_ids", set()) if preferences else set(),
+            )
+        except (requests.RequestException, ValueError) as error:
+            raise HTTPException(status_code=422, detail=f"MuRec2 could not analyze this track's audio: {error}") from error
+        if len(recs) < req.k:
+            raise HTTPException(
+                status_code=503,
+                detail=f"The acoustic index is still warming up ({len(recs)} matches ready). Keep the backend running and try again shortly.",
+            )
+        anchor_fingerprint = _acoustic_index.get(str(anchor["track_id"]))
+        if anchor_fingerprint:
+            anchor["genre"] = "MuRec2 acoustic"
+            anchor["subgenre"] = anchor_fingerprint["acoustic_signature"]
+            anchor["acoustic_signature"] = anchor_fingerprint["acoustic_signature"]
+            anchor["analysis_status"] = "complete"
         response_weights = weights if req.mode == "similar" else MODE_WEIGHTS[req.mode]
         if user:
             record_recommendation(user["id"], anchor, req.mode, response_weights, recs)
@@ -273,14 +314,23 @@ async def analyze_unknown_song(
         raise HTTPException(status_code=400, detail="The uploaded audio file is empty")
 
     temporary_path = None
+    upload_track_id = f"upload-{hashlib.sha256(payload).hexdigest()[:12]}"
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temporary:
             temporary.write(payload)
             temporary_path = Path(temporary.name)
         raw_vector, profile = analyze_audio(temporary_path)
-        acoustic_candidates = _content_model.recommend_from_audio(raw_vector, k=30)
-        inferred_genres = list(dict.fromkeys(item["genre"] for item in acoustic_candidates))
-        recommendations = recommend_from_genres(_catalog_df, inferred_genres, k=k)
+        if _acoustic_index is None:
+            raise ValueError("Acoustic fingerprint index is unavailable")
+        _acoustic_index.put(upload_track_id, raw_vector, profile)
+        _acoustic_index.ensure_minimum(_catalog_df, minimum=max(k + 6, 18))
+        upload_anchor = {
+            "track_id": upload_track_id,
+            "title": title.strip() or Path(file.filename or "Unknown song").stem,
+            "artist": "Uploaded audio",
+            "preview_url": "",
+        }
+        recommendations = _acoustic_index.recommendations(upload_anchor, _catalog_df, k=k, mode="similar")
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except Exception as error:
@@ -289,15 +339,17 @@ async def analyze_unknown_song(
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
 
-    estimated_genre = recommendations[0]["genre"] if recommendations else "unknown"
     anchor = TrackResponse(
-        track_id=f"upload-{hashlib.sha256(payload).hexdigest()[:12]}",
+        track_id=upload_track_id,
         title=title.strip() or Path(file.filename or "Unknown song").stem,
         artist="Uploaded audio",
-        genre=estimated_genre,
+        genre="MuRec2 acoustic",
+        subgenre=profile["acoustic_signature"],
         bpm=round(profile["bpm"]),
         energy=round(profile["energy"]),
         timbre=profile["timbre"],
+        acoustic_signature=profile["acoustic_signature"],
+        analysis_status="complete",
     )
     return AnalyzeResponse(
         anchor=anchor,

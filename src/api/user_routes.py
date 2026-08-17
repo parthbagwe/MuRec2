@@ -16,6 +16,7 @@ from src.user_store import (
 
 router = APIRouter()
 _catalog_df = None
+_acoustic_index = None
 
 ALLOWED_EVENTS = {
     "selected", "preview_started", "preview_completed", "youtube_opened",
@@ -23,9 +24,10 @@ ALLOWED_EVENTS = {
 }
 
 
-def init_user_routes(catalog_df) -> None:
-    global _catalog_df
+def init_user_routes(catalog_df, acoustic_index=None) -> None:
+    global _catalog_df, _acoustic_index
     _catalog_df = catalog_df
+    _acoustic_index = acoustic_index
 
 
 class RegisterRequest(BaseModel):
@@ -70,9 +72,11 @@ def _find_track(track_id: str) -> dict | None:
     if match.empty:
         return None
     row = match.iloc[0].to_dict()
+    fingerprint = _acoustic_index.get(track_id) if _acoustic_index else None
     return {
         "track_id": str(row["track_id"]), "title": row["title"], "artist": row["artist"],
-        "subgenre": _clean(row.get("subgenre")), "artwork_url": _clean(row.get("artwork_url")),
+        "subgenre": fingerprint["acoustic_signature"] if fingerprint else None,
+        "artwork_url": _clean(row.get("artwork_url")),
         "preview_url": _clean(row.get("preview_url")), "external_url": _clean(row.get("external_url")),
     }
 
