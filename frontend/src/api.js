@@ -58,7 +58,7 @@ export const getGenres = () => hostedApiEnabled ? edge("genres") : api.get("/gen
 export const getAcousticStatus = () => hostedApiEnabled ? edge("acousticStatus") : api.get("/acoustic-index/status");
 
 export const analyzeUnknown = (file, title, k = 12) => {
-  if (hostedApiEnabled) return Promise.reject(requestError("Audio-file analysis is available in the local MuRec2 desktop version. Search the hosted acoustic catalogue instead."));
+  if (hostedApiEnabled) return Promise.reject(requestError("Audio-file analysis is available in the local Cerum desktop version. Search the hosted acoustic catalogue instead."));
   const form = new FormData();
   form.append("file", file);
   form.append("title", title || file.name.replace(/\.[^.]+$/, ""));

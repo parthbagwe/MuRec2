@@ -124,7 +124,7 @@ export default function App() {
   return (
     <main>
       <header className="app-header">
-        <a className="logo" href="#top" aria-label="MuRec2 home">MuRec<span>2</span></a>
+        <a className="logo" href="#top" aria-label="Cerum home">Cerum</a>
         <nav aria-label="Account">
           {user ? <><button className="header-button" onClick={() => setLibraryOpen(true)}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <button className="header-button" onClick={() => setAuthOpen(true)}>Sign in</button>}
         </nav>
@@ -133,7 +133,7 @@ export default function App() {
       <section className="intro-section" id="top">
         <p className="kicker">Provider-neutral acoustic discovery</p>
         <h1>Matched by sound, not a genre tag.</h1>
-        <p>MuRec2 listens to available audio and compares rhythm, timbre, texture, dynamics, and harmony. Apple supplies catalogue lookup and previews—not the categories.</p>
+        <p>Cerum listens to available audio and compares rhythm, timbre, texture, dynamics, and harmony. Catalogue services supply song details and previews—not the categories.</p>
         <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
         {indexStatus && <p className="index-status">Acoustic library: {indexStatus.indexed.toLocaleString()} of {indexStatus.total.toLocaleString()} songs analyzed{indexStatus.building ? " · listening in the background" : ""}</p>}
       </section>
@@ -155,7 +155,7 @@ export default function App() {
         </div>
 
         {error && <div className="notice error" role="alert">{error}</div>}
-        {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Every available match is ranked from MuRec2’s stored audio measurements, not provider genre labels." : "Search the catalogue above. MuRec2 transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
+        {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Every available match is ranked from Cerum’s stored audio measurements, not provider genre labels." : "Search the catalogue above. Cerum transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
         <div className="results-heading"><div><p className="kicker">Ranked suggestions</p><h2>{recommendations.length ? `${recommendations.length} matches` : "Recommendations will appear here"}</h2></div>{scoreMode && <p>{scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model</p>}</div>
@@ -164,7 +164,7 @@ export default function App() {
         </div>
       </section>
 
-      <footer><span>MuRec2 · Categories derived locally from audio · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
+      <footer><span>Cerum · Categories derived from audio · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={(track) => recommend(track)} />
     </main>

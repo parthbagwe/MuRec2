@@ -26,7 +26,7 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
         ? await register(displayName, email, password)
         : await login(email, password);
       if (response.data.confirmation_required) {
-        setMessage("Check your email and confirm your MuRec2 account, then return here to sign in.");
+        setMessage("Check your email and confirm your Cerum account, then return here to sign in.");
         setPassword("");
         return;
       }
@@ -44,9 +44,9 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal auth-panel" role="dialog" aria-modal="true" aria-labelledby="auth-title">
         <button className="modal-close" onClick={onClose} aria-label="Close sign in">×</button>
-        <p className="kicker">Your MuRec2 account</p>
+        <p className="kicker">Your Cerum account</p>
         <h2 id="auth-title">{mode === "login" ? "Welcome back" : "Save your listening trail"}</h2>
-        <p className="modal-copy">Favourites and recommendation history are securely synced to your MuRec2 cloud account.</p>
+        <p className="modal-copy">Favourites and recommendation history are securely synced to your Cerum account.</p>
 
         <div className="auth-tabs" aria-label="Account action">
           <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Sign in</button>

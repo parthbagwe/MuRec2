@@ -35,7 +35,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
         if (currentId === requestId.current) {
           setResults([]);
           setSearched(false);
-          setSearchError(hostedApiEnabled ? "MuRec2 cannot reach the hosted music service. Try again shortly." : "MuRec2 cannot reach the API. Make sure start-backend.cmd is running.");
+          setSearchError(hostedApiEnabled ? "Cerum cannot reach the hosted music service. Try again shortly." : "Cerum cannot reach the API. Make sure start-backend.cmd is running.");
         }
       } finally {
         if (currentId === requestId.current) setLoading(false);
@@ -79,10 +79,10 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
             <div className="unknown-song">
               <strong>No catalogue match for “{query}”</strong>
               {hostedApiEnabled ? (
-                <small>Try the artist name or another spelling. Audio-file analysis remains available in the local MuRec2 desktop version.</small>
+                <small>Try the artist name or another spelling. Audio-file analysis remains available in the local Cerum desktop version.</small>
               ) : (
                 <>
-                  <small>Upload a clip or song file. MuRec2 will measure its tempo, timbre, frequency spectrum, MFCCs and key, then find acoustic matches. The audio is not retained.</small>
+                  <small>Upload a clip or song file. Cerum will measure its tempo, timbre, frequency spectrum, MFCCs and key, then find acoustic matches. The audio is not retained.</small>
                   <label className="upload-action">
                     {analyzing ? "Analyzing audio…" : "Choose audio file"}
                     <input
