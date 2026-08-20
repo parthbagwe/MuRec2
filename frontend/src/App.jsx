@@ -4,6 +4,7 @@ import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
 import SearchBar from "./components/SearchBar";
+import TrackPreview from "./components/TrackPreview";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -151,7 +152,12 @@ export default function App() {
         </div>
 
         <div className="controls-card">
-          <div><p className="kicker">Current reference</p><h2>{selected ? `${selected.title} — ${selected.artist}` : "Select a track above"}</h2></div>
+          <div className="reference-track">
+            <p className="kicker">Current reference</p>
+            {selected
+              ? <TrackPreview track={selected} playingTrackId={playingTrackId} onPreviewChange={setPlayingTrackId} onInteraction={handleInteraction} />
+              : <h2>Select a track above</h2>}
+          </div>
           <div className="sliders">
             {Object.entries(weights).map(([name, value]) => <label key={name}><span>{weightLabels[name]}<strong>{Math.round(value * 100)}%</strong></span><input type="range" min="0" max="1" step="0.05" value={value} disabled={mode !== "similar"} onChange={(event) => updateWeight(name, event.target.value)} /></label>)}
           </div>

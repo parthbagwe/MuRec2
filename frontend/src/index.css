@@ -82,7 +82,20 @@ h2 { margin: 0; font: 400 24px Georgia, serif; letter-spacing: -.4px; }
 .mode-selector span { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .mode-selector .active span { color: #c6c4bd; }
 
-.controls-card { display: grid; grid-template-columns: 1.1fr 1.5fr auto; gap: 36px; align-items: center; padding: 24px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.controls-card { display: grid; grid-template-columns: 1.35fr 1.5fr auto; gap: 36px; align-items: center; padding: 24px 0; border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.reference-track { min-width: 0; }
+.reference-preview { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.reference-preview-copy { min-width: 0; }
+.reference-preview h2, .reference-preview p { overflow: hidden; margin: 0; text-overflow: ellipsis; white-space: nowrap; }
+.reference-preview h2 { font-size: 20px; }
+.reference-preview p { margin-top: 3px; color: var(--muted); font-size: 10px; text-transform: capitalize; }
+.reference-preview-actions { display: flex; align-items: stretch; margin-top: 10px; border: 1px solid var(--line); }
+.reference-preview-actions button, .reference-preview-actions a, .reference-preview-actions .preview-unavailable { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 7px 10px; border: 0; background: transparent; font-size: 9px; font-weight: 700; text-decoration: none; }
+.reference-preview-actions > * + * { border-left: 1px solid var(--line); }
+.reference-preview-actions svg { width: 13px; height: 13px; fill: currentColor; }
+.reference-preview-actions a { color: #a52822; }
+.reference-preview-actions a:hover { background: #a52822; color: white; }
+.preview-error { display: block; margin-top: 7px; color: #8c3029; font-size: 9px; line-height: 1.35; }
 .sliders { display: grid; gap: 10px; }
 .sliders label > span { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; text-transform: capitalize; }
 .sliders strong { color: var(--ink); }
