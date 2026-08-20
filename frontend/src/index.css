@@ -74,7 +74,7 @@ h2 { margin: 0; font: 400 24px Georgia, serif; letter-spacing: -.4px; }
 
 .workspace { max-width: 1180px; min-height: 520px; margin: auto; padding: 52px 24px 90px; }
 .mode-section { display: grid; grid-template-columns: 220px 1fr; gap: 38px; padding-bottom: 44px; }
-.mode-selector { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.mode-selector { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .mode-selector button { display: grid; align-content: start; gap: 8px; min-height: 112px; padding: 15px; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; }
 .mode-selector button:hover { background: #ece9e0; }
 .mode-selector button.active { background: var(--ink); color: white; }
@@ -104,6 +104,9 @@ h2 { margin: 0; font: 400 24px Georgia, serif; letter-spacing: -.4px; }
 .primary-button { min-height: 42px; padding: 10px 17px; border: 1px solid var(--ink); border-radius: 0; background: var(--ink); color: white; font-weight: 600; font-size: 12px; }
 .primary-button:hover:not(:disabled) { border-color: var(--accent); background: var(--accent); }
 .primary-button:disabled { cursor: not-allowed; opacity: .35; }
+.transition-explainer { display: grid; grid-template-columns: 210px 1fr; gap: 28px; margin-top: 18px; padding: 15px 18px; border-left: 3px solid var(--accent); background: #eee5df; font-size: 11px; line-height: 1.5; }
+.transition-explainer strong { font: 400 14px Georgia, serif; }
+.transition-explainer span { color: var(--muted); }
 .notice { margin: 26px 0; padding: 15px 18px; border-left: 3px solid var(--muted); background: var(--soft); color: var(--muted); font-size: 12px; line-height: 1.5; }
 .notice.error { border-color: var(--accent); background: #f4dfdc; color: #84352f; }
 .audio-profile { display: grid; grid-template-columns: repeat(6, 1fr); margin: 28px 0; border: 1px solid var(--line); border-right: 0; }
@@ -115,6 +118,11 @@ h2 { margin: 0; font: 400 24px Georgia, serif; letter-spacing: -.4px; }
 .results-heading { display: flex; align-items: end; justify-content: space-between; margin: 50px 0 18px; }
 .results-heading > p { margin: 0; color: var(--muted); font-size: 10px; text-transform: capitalize; }
 .recommendation-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--ink); }
+.recommendation-grid.transition-grid { grid-template-columns: 1fr; }
+.transition-grid .recommendation-card { border-right: 0; }
+.transition-card { border-left: 3px solid var(--accent); }
+.recommendation-card .transition-from { margin: 0 0 11px; color: var(--muted); font-size: 9px; letter-spacing: .4px; text-transform: uppercase; }
+.recommendation-card .transition-note { margin: 12px 0 0; color: var(--accent); font: 400 12px Georgia, serif; }
 .recommendation-card { position: relative; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: transparent; color: inherit; text-align: left; }
 .recommendation-card:nth-child(even) { border-right: 0; }
 .recommendation-card:hover { background: #ece9e0; }
@@ -227,6 +235,7 @@ footer a:hover { color: var(--accent); }
   .recommendation-grid { grid-template-columns: 1fr; }
   .recommendation-card { border-right: 0; }
   .audio-profile { grid-template-columns: repeat(2, 1fr); }
+  .transition-explainer { grid-template-columns: 1fr; gap: 7px; }
   .modal-backdrop { padding: 14px; }
   .modal { padding: 26px 22px; }
   .library-backdrop { padding: 0; }

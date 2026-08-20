@@ -47,6 +47,9 @@ class RecommendationResponse(BaseModel):
     source: Optional[str] = None
     score_mode: str = "hybrid"
     match_reasons: list[str] = Field(default_factory=list)
+    transition_step: Optional[int] = None
+    transition_from: Optional[str] = None
+    transition_note: Optional[str] = None
 
 
 class RecommendRequest(BaseModel):

@@ -8,7 +8,8 @@ Cerum is an explainable, provider-neutral music recommendation app. Pick a track
 - **Streamed previews** — 4,661 short samples that play on demand, with an animated circular visualizer.
 - **YouTube discovery** — every recommendation has a YouTube search link for the song and artist.
 - **Unknown-song analysis** — transient analysis of user-provided audio for tempo, timbre, spectral measurements, MFCCs, chroma, and key.
-- **Multiple discovery modes** — balanced similarity, rhythm-first, timbre-first, relevant discovery, and personalization learned from favourites, completed previews, YouTube opens, and dislikes.
+- **Multiple discovery modes** — balanced similarity, rhythm-first, timbre-first, relevant discovery, personalization, and a five-step transition run.
+- **Ordered transition runs** — the selected song becomes track 01 and Cerum builds five playable follow-ups, scoring every handoff against the previous song using BPM, exact-key compatibility, energy, texture, and style continuity.
 - **Cloud listener accounts** — Supabase Auth accounts with favourites, automatically recorded recommendation history, and interaction signals protected by row-level security.
 
 YouTube is the prominent listening destination. Apple is used for catalogue lookup, artwork, and available preview audio. Cerum's primary score comes from its own audio measurements. A separately maintained Cerum microgenre taxonomy acts as a compatibility guardrail; Apple and Spotify recommendation scores are never used. Preview audio used for fingerprinting is downloaded to a temporary file, analyzed locally, and deleted immediately; only numerical features and Cerum's category signature are retained.

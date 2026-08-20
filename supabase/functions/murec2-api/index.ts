@@ -18,6 +18,7 @@ const modeWeights: Record<string, [number, number, number]> = {
   timbre: [0.15, 0.70, 0.15],
   discover: [0.35, 0.40, 0.25],
   personalized: [0.35, 0.40, 0.25],
+  transition: [0.42, 0.25, 0.33],
 };
 const allowedEvents = new Set([
   "selected", "preview_started", "preview_completed", "youtube_opened",
@@ -194,6 +195,65 @@ function matchReasons(anchor: JsonRecord, candidate: JsonRecord, parts: [number,
   return [...new Set(reasons)].slice(0, 3);
 }
 
+const keyNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+function transitionTempoDifference(firstBpm: number, secondBpm: number) {
+  return Math.min(
+    Math.abs(firstBpm - secondBpm),
+    Math.abs(firstBpm - secondBpm * 2),
+    Math.abs(firstBpm * 2 - secondBpm),
+  );
+}
+
+function keyCompatibility(first: JsonRecord, second: JsonRecord) {
+  const firstKey = keyNames.indexOf(String(first.profile.key ?? ""));
+  const secondKey = keyNames.indexOf(String(second.profile.key ?? ""));
+  const firstMode = String(first.profile.mode ?? "");
+  const secondMode = String(second.profile.mode ?? "");
+  if (firstKey < 0 || secondKey < 0) return 0.45;
+  const interval = (secondKey - firstKey + 12) % 12;
+  if (interval === 0 && firstMode === secondMode) return 1;
+  if (firstMode === "major" && secondMode === "minor" && interval === 9) return 0.98;
+  if (firstMode === "minor" && secondMode === "major" && interval === 3) return 0.98;
+  if (firstMode === secondMode && [5, 7].includes(interval)) return 0.92;
+  if (interval === 0) return 0.84;
+  if (firstMode === secondMode && [2, 10].includes(interval)) return 0.72;
+  return 0.30;
+}
+
+function transitionMetrics(previous: JsonRecord, candidate: JsonRecord, anchor: JsonRecord) {
+  const previousProfile = previous.profile;
+  const candidateProfile = candidate.profile;
+  const tempoDifference = transitionTempoDifference(previousProfile.bpm, candidateProfile.bpm);
+  const tempo = Math.exp(-tempoDifference / 12);
+  const chromaDirect = Math.max(0, cosine(previous.vector.slice(23, 35), candidate.vector.slice(23, 35)));
+  const key = keyCompatibility(previous, candidate);
+  const harmony = Math.max(0, Math.min(1, 0.72 * key + 0.28 * chromaDirect));
+  const [, timbre] = components(previous, candidate);
+  const energy = meanScaledDifference(
+    [previousProfile.energy, previousProfile.aggression, previousProfile.dynamic_range, previousProfile.danceability],
+    [candidateProfile.energy, candidateProfile.aggression, candidateProfile.dynamic_range, candidateProfile.danceability],
+    [55, 1, 1, 1],
+    1.7,
+  );
+  const currentStyle = styleSimilarity(previous.track.provider_subgenre, candidate.track.provider_subgenre);
+  const anchorStyle = styleSimilarity(anchor.track.provider_subgenre, candidate.track.provider_subgenre);
+  const base = 0.36 * tempo + 0.30 * harmony + 0.20 * timbre + 0.14 * energy;
+  const score = base * (0.78 + 0.22 * currentStyle) * (0.90 + 0.10 * anchorStyle);
+  const reasons: string[] = [];
+  if (tempoDifference <= 5) reasons.push(`${Math.round(previousProfile.bpm)}→${Math.round(candidateProfile.bpm)} BPM`);
+  if (key >= 0.90) reasons.push(`${previousProfile.key} ${previousProfile.mode}→${candidateProfile.key} ${candidateProfile.mode}`);
+  if (energy >= 0.88) reasons.push("steady energy handoff");
+  if (timbre >= 0.86) reasons.push("matched texture");
+  if (!reasons.length) reasons.push("balanced tempo and tone");
+  return {
+    parts: [tempo, timbre, harmony] as [number, number, number],
+    score: Math.max(0, Math.min(1, score)),
+    reasons: reasons.slice(0, 3),
+    note: `${Math.round(previousProfile.bpm)}→${Math.round(candidateProfile.bpm)} BPM · ${previousProfile.key} ${previousProfile.mode}→${candidateProfile.key} ${candidateProfile.mode}`,
+  };
+}
+
 function components(first: JsonRecord, second: JsonRecord): [number, number, number] {
   const a = first.profile;
   const b = second.profile;
@@ -304,7 +364,51 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
     throw new ApiError(400, "Recommendation weights must be non-negative and sum to 1");
   }
 
-  const scored = library.flatMap((candidate) => {
+  let recommendations: JsonRecord[];
+  if (mode === "transition") {
+    const usedTrackIds = new Set<string>([String(anchor.track_id)]);
+    const usedRecordings = new Set<string>([`${normalizedStyle(anchor.track.title)}::${normalizedStyle(anchor.track.artist)}`]);
+    const usedArtists = new Set<string>([normalizedStyle(anchor.track.artist)]);
+    const chain: JsonRecord[] = [];
+    let previous = anchor;
+    for (let step = 1; step <= k; step += 1) {
+      const shortlist = library.flatMap((candidate) => {
+        const recordingKey = `${normalizedStyle(candidate.track.title)}::${normalizedStyle(candidate.track.artist)}`;
+        if (usedTrackIds.has(String(candidate.track_id)) || usedRecordings.has(recordingKey)) return [];
+        if (!candidate.track.preview_url) return [];
+        const tempo = Math.exp(-transitionTempoDifference(previous.profile.bpm, candidate.profile.bpm) / 12);
+        const key = keyCompatibility(previous, candidate);
+        const style = styleSimilarity(previous.track.provider_subgenre, candidate.track.provider_subgenre);
+        return [{ candidate, recordingKey, roughScore: 0.50 * tempo + 0.32 * key + 0.18 * style }];
+      }).sort((left, right) => right.roughScore - left.roughScore).slice(0, 520);
+      const ranked = shortlist.map(({ candidate, recordingKey }) => {
+        const metrics = transitionMetrics(previous, candidate, anchor);
+        let score = metrics.score;
+        if (usedArtists.has(normalizedStyle(candidate.track.artist))) score *= 0.62;
+        return { candidate, recordingKey, metrics, score };
+      }).sort((left, right) => right.score - left.score);
+      const next = ranked[0];
+      if (!next) break;
+      chain.push({
+        ...cleanTrack(next.candidate.track, next.candidate),
+        audio_similarity: Number(next.metrics.parts[0].toFixed(4)),
+        lyric_similarity: Number(next.metrics.parts[1].toFixed(4)),
+        collab_similarity: Number(next.metrics.parts[2].toFixed(4)),
+        hybrid_score: Number(next.score.toFixed(4)),
+        score_mode: "acoustic-transition",
+        match_reasons: next.metrics.reasons,
+        transition_step: step,
+        transition_from: `${previous.track.title} — ${previous.track.artist}`,
+        transition_note: next.metrics.note,
+      });
+      usedTrackIds.add(String(next.candidate.track_id));
+      usedRecordings.add(next.recordingKey);
+      usedArtists.add(normalizedStyle(next.candidate.track.artist));
+      previous = next.candidate;
+    }
+    recommendations = chain;
+  } else {
+    const scored = library.flatMap((candidate) => {
     if (candidate.track_id === anchor.track_id) return [];
     if (candidate.track.title.trim().toLowerCase() === anchor.track.title.trim().toLowerCase() && candidate.track.artist.trim().toLowerCase() === anchor.track.artist.trim().toLowerCase()) return [];
     let parts = components(anchor, candidate);
@@ -336,25 +440,26 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
       score_mode: `acoustic-fingerprint-${mode}`,
       match_reasons: matchReasons(anchor, candidate, parts),
     }];
-  }).sort((a, b) => b.hybrid_score - a.hybrid_score);
+    }).sort((a, b) => b.hybrid_score - a.hybrid_score);
 
-  const recordings = new Set<string>();
-  const artistCounts = new Map<string, number>();
-  const diverse = scored.filter((item) => {
-    const key = `${item.title.trim().toLowerCase()}::${item.artist.trim().toLowerCase()}`;
-    if (recordings.has(key)) return false;
-    const artistKey = item.artist.trim().toLowerCase();
-    if ((artistCounts.get(artistKey) ?? 0) >= 2) return false;
-    recordings.add(key);
-    artistCounts.set(artistKey, (artistCounts.get(artistKey) ?? 0) + 1);
-    return true;
-  });
-  const recommendations = diverse.slice(0, k);
-  if (recommendations.length < k) {
-    const selected = new Set(recommendations.map((item) => item.track_id));
-    for (const item of scored) {
-      if (!selected.has(item.track_id)) recommendations.push(item);
-      if (recommendations.length >= k) break;
+    const recordings = new Set<string>();
+    const artistCounts = new Map<string, number>();
+    const diverse = scored.filter((item) => {
+      const key = `${item.title.trim().toLowerCase()}::${item.artist.trim().toLowerCase()}`;
+      if (recordings.has(key)) return false;
+      const artistKey = item.artist.trim().toLowerCase();
+      if ((artistCounts.get(artistKey) ?? 0) >= 2) return false;
+      recordings.add(key);
+      artistCounts.set(artistKey, (artistCounts.get(artistKey) ?? 0) + 1);
+      return true;
+    });
+    recommendations = diverse.slice(0, k);
+    if (recommendations.length < k) {
+      const selected = new Set(recommendations.map((item) => item.track_id));
+      for (const item of scored) {
+        if (!selected.has(item.track_id)) recommendations.push(item);
+        if (recommendations.length >= k) break;
+      }
     }
   }
 

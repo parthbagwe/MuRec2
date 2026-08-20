@@ -29,7 +29,9 @@ MODE_WEIGHTS = {
     "timbre": (0.15, 0.70, 0.15),
     "discover": (0.35, 0.40, 0.25),
     "personalized": (0.35, 0.40, 0.25),
+    "transition": (0.42, 0.25, 0.33),
 }
+KEY_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
 class AcousticIndex:
@@ -260,6 +262,131 @@ class AcousticIndex:
         harmony = float(np.clip(.65 * chroma_similarity + .35 * harmonic_profile, 0, 1))
         return rhythm, timbre, harmony
 
+    @staticmethod
+    def transition_tempo_difference(first_bpm: float, second_bpm: float) -> float:
+        return min(
+            abs(first_bpm - second_bpm),
+            abs(first_bpm - second_bpm * 2),
+            abs(first_bpm * 2 - second_bpm),
+        )
+
+    @staticmethod
+    def key_compatibility(first: dict, second: dict) -> float:
+        try:
+            first_key = KEY_NAMES.index(str(first["profile"].get("key", "")))
+            second_key = KEY_NAMES.index(str(second["profile"].get("key", "")))
+        except ValueError:
+            return .45
+        first_mode = str(first["profile"].get("mode", ""))
+        second_mode = str(second["profile"].get("mode", ""))
+        interval = (second_key - first_key) % 12
+        if interval == 0 and first_mode == second_mode:
+            return 1.0
+        if first_mode == "major" and second_mode == "minor" and interval == 9:
+            return .98
+        if first_mode == "minor" and second_mode == "major" and interval == 3:
+            return .98
+        if first_mode == second_mode and interval in {5, 7}:
+            return .92
+        if interval == 0:
+            return .84
+        if first_mode == second_mode and interval in {2, 10}:
+            return .72
+        return .30
+
+    @classmethod
+    def transition_metrics(
+        cls, previous: dict, candidate: dict, anchor: dict,
+        previous_row: dict, candidate_row: dict, anchor_row: dict,
+    ) -> dict:
+        previous_profile, candidate_profile = previous["profile"], candidate["profile"]
+        tempo_difference = cls.transition_tempo_difference(previous_profile["bpm"], candidate_profile["bpm"])
+        tempo = math.exp(-tempo_difference / 12)
+        chroma_a, chroma_b = np.asarray(previous["vector"][23:35]), np.asarray(candidate["vector"][23:35])
+        chroma_direct = max(0.0, float(np.dot(chroma_a, chroma_b) / max(np.linalg.norm(chroma_a) * np.linalg.norm(chroma_b), 1e-10)))
+        key = cls.key_compatibility(previous, candidate)
+        harmony = float(np.clip(.72 * key + .28 * chroma_direct, 0, 1))
+        _, timbre, _ = cls.components(previous, candidate)
+        energy = cls._bounded_similarity(
+            np.array([previous_profile["energy"], previous_profile["aggression"], previous_profile["dynamic_range"], previous_profile["danceability"]]),
+            np.array([candidate_profile["energy"], candidate_profile["aggression"], candidate_profile["dynamic_range"], candidate_profile["danceability"]]),
+            np.array([55, 1, 1, 1]), 1.7,
+        )
+        current_style = subgenre_similarity(previous_row.get("subgenre", ""), candidate_row.get("subgenre", ""))
+        anchor_style = subgenre_similarity(anchor_row.get("subgenre", ""), candidate_row.get("subgenre", ""))
+        base = .36 * tempo + .30 * harmony + .20 * timbre + .14 * energy
+        score = float(np.clip(base * (.78 + .22 * current_style) * (.90 + .10 * anchor_style), 0, 1))
+        reasons = []
+        if tempo_difference <= 5:
+            reasons.append(f"{round(previous_profile['bpm'])}→{round(candidate_profile['bpm'])} BPM")
+        if key >= .90:
+            reasons.append(f"{previous_profile['key']} {previous_profile['mode']}→{candidate_profile['key']} {candidate_profile['mode']}")
+        if energy >= .88:
+            reasons.append("steady energy handoff")
+        if timbre >= .86:
+            reasons.append("matched texture")
+        if not reasons:
+            reasons.append("balanced tempo and tone")
+        return {
+            "parts": (tempo, timbre, harmony), "score": score, "reasons": reasons[:3],
+            "note": f"{round(previous_profile['bpm'])}→{round(candidate_profile['bpm'])} BPM · {previous_profile['key']} {previous_profile['mode']}→{candidate_profile['key']} {candidate_profile['mode']}",
+        }
+
+    @classmethod
+    def transition_recommendations(
+        cls, anchor: dict, anchor_fp: dict, indexed: dict, rows: dict, k: int,
+    ) -> list[dict]:
+        anchor_id = str(anchor["track_id"])
+        used_ids = {anchor_id}
+        used_recordings = {(str(anchor.get("title", "")).casefold().strip(), str(anchor.get("artist", "")).casefold().strip())}
+        used_artists = {str(anchor.get("artist", "")).casefold().strip()}
+        chain = []
+        previous_fp, previous_row = anchor_fp, anchor
+        for step in range(1, k + 1):
+            shortlist = []
+            for track_id, candidate_fp in indexed.items():
+                if track_id in used_ids or track_id not in rows:
+                    continue
+                row = rows[track_id]
+                recording_key = (str(row.get("title", "")).casefold().strip(), str(row.get("artist", "")).casefold().strip())
+                preview_url = row.get("preview_url")
+                if recording_key in used_recordings or not isinstance(preview_url, str) or not preview_url.strip():
+                    continue
+                tempo = math.exp(-cls.transition_tempo_difference(previous_fp["profile"]["bpm"], candidate_fp["profile"]["bpm"]) / 12)
+                key = cls.key_compatibility(previous_fp, candidate_fp)
+                style = subgenre_similarity(previous_row.get("subgenre", ""), row.get("subgenre", ""))
+                shortlist.append((.50 * tempo + .32 * key + .18 * style, track_id, row, candidate_fp, recording_key))
+            ranked = []
+            for _, track_id, row, candidate_fp, recording_key in sorted(shortlist, reverse=True, key=lambda item: item[0])[:520]:
+                metrics = cls.transition_metrics(previous_fp, candidate_fp, anchor_fp, previous_row, row, anchor)
+                score = metrics["score"]
+                artist_key = str(row.get("artist", "")).casefold().strip()
+                if artist_key in used_artists:
+                    score *= .62
+                ranked.append((score, track_id, row, candidate_fp, recording_key, artist_key, metrics))
+            if not ranked:
+                break
+            score, track_id, row, candidate_fp, recording_key, artist_key, metrics = max(ranked, key=lambda item: item[0])
+            tempo, timbre, harmony = metrics["parts"]
+            chain.append({
+                "track_id": track_id, "title": row["title"], "artist": row["artist"],
+                "genre": "MuRec2 acoustic", "subgenre": candidate_fp["acoustic_signature"],
+                "year": int(row["year"]) if pd.notna(row.get("year")) else None,
+                "album": row.get("album"), "artwork_url": row.get("artwork_url"),
+                "preview_url": row.get("preview_url"), "external_url": row.get("external_url"),
+                "source": row.get("source") or "Catalogue", "audio_similarity": round(tempo, 4),
+                "lyric_similarity": round(timbre, 4), "collab_similarity": round(harmony, 4),
+                "hybrid_score": round(score, 4), "score_mode": "acoustic-transition",
+                "match_reasons": metrics["reasons"], "transition_step": step,
+                "transition_from": f"{previous_row['title']} — {previous_row['artist']}",
+                "transition_note": metrics["note"],
+            })
+            used_ids.add(track_id)
+            used_recordings.add(recording_key)
+            used_artists.add(artist_key)
+            previous_fp, previous_row = candidate_fp, row
+        return chain
+
     def recommendations(
         self, anchor: dict, catalog: pd.DataFrame, k: int = 12, mode: str = "similar",
         seen_track_ids: set[str] | None = None, favorite_track_ids: set[str] | None = None,
@@ -276,6 +403,8 @@ class AcousticIndex:
         favorites = [indexed[track_id] for track_id in (favorite_track_ids or set()) if track_id in indexed]
         disliked = [indexed[track_id] for track_id in (disliked_track_ids or set()) if track_id in indexed]
         chosen_weights = weights if mode == "similar" and weights else MODE_WEIGHTS.get(mode, MODE_WEIGHTS["similar"])
+        if mode == "transition":
+            return self.transition_recommendations(anchor, anchor_fp, indexed, rows, k)
         seen = seen_track_ids or set()
         scored = []
         for track_id, candidate_fp in indexed.items():

@@ -16,7 +16,9 @@ function Bar({ label, value, color }) {
 }
 
 export default function ScoreBreakdown({ rec }) {
-  const labels = rec.score_mode?.startsWith("acoustic-fingerprint")
+  const labels = rec.score_mode === "acoustic-transition"
+    ? ["tempo", "texture", "key"]
+    : rec.score_mode?.startsWith("acoustic-fingerprint")
     ? ["rhythm", "timbre", "harmony"]
     : ({
     "metadata": ["subgenre", "artist", "era"],

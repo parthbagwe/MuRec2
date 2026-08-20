@@ -39,7 +39,7 @@ _catalog_df = None
 _live_tracks = {}
 _acoustic_index = None
 
-RECOMMENDATION_MODES = {"similar", "rhythm", "timbre", "discover", "personalized"}
+RECOMMENDATION_MODES = {"similar", "rhythm", "timbre", "discover", "personalized", "transition"}
 MODE_WEIGHTS = {
     name: {"audio": values[0], "lyric": values[1], "collab": values[2]}
     for name, values in ACOUSTIC_MODE_WEIGHTS.items()

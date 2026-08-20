@@ -32,14 +32,21 @@ class FakeAcousticIndex:
         for row in catalog.to_dict("records"):
             if str(row["track_id"]) == str(anchor["track_id"]):
                 continue
-            results.append({
+            result = {
                 "track_id": str(row["track_id"]), "title": row["title"], "artist": row["artist"],
                 "genre": "MuRec2 acoustic", "subgenre": self.signature, "year": int(row["year"]) if not np.isnan(row["year"]) else None,
                 "album": row.get("album"), "artwork_url": row.get("artwork_url"), "preview_url": row.get("preview_url"),
                 "external_url": row.get("external_url"), "source": row.get("source"),
                 "audio_similarity": .91, "lyric_similarity": .84, "collab_similarity": .79,
                 "hybrid_score": .86, "score_mode": f"acoustic-fingerprint-{mode}",
-            })
+            }
+            if mode == "transition":
+                result.update({
+                    "score_mode": "acoustic-transition", "transition_step": len(results) + 1,
+                    "transition_from": f"{anchor['title']} — {anchor['artist']}",
+                    "transition_note": "120→122 BPM · C major→G major",
+                })
+            results.append(result)
             if len(results) >= k:
                 break
         return results
@@ -118,6 +125,20 @@ def test_invalid_weights_are_rejected():
             json={"track_id": "demo-0001", "weights": {"audio": 1, "lyric": 1, "collab": -1}},
         )
         assert response.status_code == 400
+
+
+def test_transition_mode_returns_an_ordered_five_song_chain():
+    with api_client() as client:
+        anchor = client.get("/api/tracks", params={"page_size": 1}).json()["results"][0]
+        response = client.post("/api/recommend", json={
+            "track_id": anchor["track_id"], "k": 5, "mode": "transition",
+        })
+        assert response.status_code == 200
+        recommendations = response.json()["recommendations"]
+        assert len(recommendations) == 5
+        assert [item["transition_step"] for item in recommendations] == [1, 2, 3, 4, 5]
+        assert all(item["score_mode"] == "acoustic-transition" for item in recommendations)
+        assert all(item["transition_note"] for item in recommendations)
 
 
 def test_unknown_audio_is_analyzed_and_recommended():

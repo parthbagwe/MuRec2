@@ -49,15 +49,16 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
   const artwork = rec.artwork_url?.replace("100x100bb", "300x300bb");
 
   return (
-    <article className={`recommendation-card ${isPlaying ? "is-playing" : ""}`}>
+    <article className={`recommendation-card ${isPlaying ? "is-playing" : ""} ${rec.score_mode === "acoustic-transition" ? "transition-card" : ""}`}>
       <div className="card-heading">
-        <span className="rank">{String(rank).padStart(2, "0")}</span>
-        <span className="score">{Math.round(rec.hybrid_score * 100)}% match</span>
+        <span className="rank">{rec.transition_step ? `${String(rec.transition_step).padStart(2, "0")} → ${String(rec.transition_step + 1).padStart(2, "0")}` : String(rank).padStart(2, "0")}</span>
+        <span className="score">{Math.round(rec.hybrid_score * 100)}% {rec.transition_step ? "flow" : "match"}</span>
         <button className={`favorite-button ${isFavorite ? "active" : ""}`} onClick={() => onToggleFavorite(rec)} aria-label={`${isFavorite ? "Remove" : "Add"} ${rec.title} ${isFavorite ? "from" : "to"} favourites`}>
           <HeartIcon filled={isFavorite} />
         </button>
       </div>
       <button className="card-main" onClick={() => onClick(rec)} aria-label={`Recommend songs like ${rec.title} by ${rec.artist}`}>
+        {rec.transition_from && <p className="transition-from">After {rec.transition_from}</p>}
         <div className="track-identity">
           <div className="artwork-disc">
             <span className="visualizer-ring" aria-hidden="true" />
@@ -66,6 +67,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
           <div><h3>{rec.title}</h3><p>{rec.artist}</p><small>{rec.subgenre || rec.genre}{rec.year ? ` · ${rec.year}` : ""}</small></div>
         </div>
         <ScoreBreakdown rec={rec} />
+        {rec.transition_note && <p className="transition-note">{rec.transition_note}</p>}
         {rec.match_reasons?.length > 0 && <div className="match-reasons" aria-label="Why this matches">{rec.match_reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>}
       </button>
 

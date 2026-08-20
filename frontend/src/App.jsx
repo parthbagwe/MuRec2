@@ -13,6 +13,7 @@ const MODES = [
   { id: "timbre", label: "Timbre", description: "Spectral texture, brightness, density, and MFCC shape" },
   { id: "discover", label: "Surprise me", description: "A related sound from new artists—not a random detour" },
   { id: "personalized", label: "For you", description: "Learns from favourites, full previews, YouTube opens, and dislikes" },
+  { id: "transition", label: "Transition run", description: "Five ordered songs matched step by step for tempo, key, energy, and texture" },
 ];
 
 export default function App() {
@@ -62,7 +63,7 @@ export default function App() {
     setError("");
     setAudioProfile(null);
     try {
-      const response = await getRecommendations(track.track_id, 12, nextWeights, nextMode);
+      const response = await getRecommendations(track.track_id, nextMode === "transition" ? 5 : 12, nextWeights, nextMode);
       setRecommendations(response.data.recommendations);
       if (user) getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
     } catch (requestError) {
@@ -164,12 +165,14 @@ export default function App() {
           <button className="primary-button" disabled={!selected || loading || Boolean(audioProfile)} onClick={() => recommend(selected)}>{loading ? "Finding matches…" : audioProfile ? "Acoustic analysis" : "Recalculate"}</button>
         </div>
 
+        {mode === "transition" && selected && <div className="transition-explainer"><strong>Your starting song is track 01.</strong><span>Cerum chooses five playable follow-ups in order. Every handoff is scored against the song immediately before it, while the original sound keeps the sequence from drifting.</span></div>}
+
         {error && <div className="notice error" role="alert">{error}</div>}
         {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Cerum ranks measured sound first, then applies its own microgenre compatibility guardrail—not an Apple or Spotify recommendation score." : "Search the catalogue above. Cerum transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
-        <div className="results-heading"><div><p className="kicker">Ranked suggestions</p><h2>{recommendations.length ? `${recommendations.length} matches` : "Recommendations will appear here"}</h2></div>{scoreMode && <p>{scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model</p>}</div>
-        <div className="recommendation-grid">
+        <div className="results-heading"><div><p className="kicker">{mode === "transition" ? "Ordered transition path" : "Ranked suggestions"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} matches`) : "Recommendations will appear here"}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : `${scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model`}</p>}</div>
+        <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
           {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); recommend(track); }} playingTrackId={playingTrackId} onPreviewChange={setPlayingTrackId} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
         </div>
       </section>
