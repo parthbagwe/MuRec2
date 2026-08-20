@@ -1,19 +1,19 @@
 # Cerum
 
-Cerum is an explainable, provider-neutral acoustic recommendation app. Pick a track and it analyzes available audio, then ranks songs by rhythm, timbre/texture, harmony, and dynamics—not Spotify or Apple genre tags.
+Cerum is an explainable, provider-neutral music recommendation app. Pick a track and it analyzes available audio, ranks songs by rhythm, timbre/texture, harmony, and dynamics, then applies Cerum's own fine-grained style compatibility guardrail to prevent broad-category collisions. Spotify and Apple recommendation scores are not used.
 
 - **Real catalogue search** — 4,664 real songs imported through Apple's official iTunes Search API, spanning 25 additional styles including nuanced metal, electronic, jazz, soul, Latin, Indian, African, and East Asian categories.
 - **Audio-derived categories** — Cerum assigns a five-part signature covering intensity, texture, rhythm character, harmonic character, and tempo band.
-- **Acoustic recommendations** — transparent rhythm, timbre, and harmony scores derived from actual audio fingerprints.
+- **Acoustic-first recommendations** — transparent rhythm, timbre, and harmony scores derived from actual audio fingerprints, with a microgenre guardrail that separates cases such as nu metal and alternative rock.
 - **Streamed previews** — 4,661 short samples that play on demand, with an animated circular visualizer.
 - **YouTube discovery** — every recommendation has a YouTube search link for the song and artist.
 - **Unknown-song analysis** — transient analysis of user-provided audio for tempo, timbre, spectral measurements, MFCCs, chroma, and key.
-- **Multiple discovery modes** — balanced similarity, rhythm-first, timbre-first, novelty-first, and favourite-informed acoustic personalization.
+- **Multiple discovery modes** — balanced similarity, rhythm-first, timbre-first, relevant discovery, and personalization learned from favourites, completed previews, YouTube opens, and dislikes.
 - **Cloud listener accounts** — Supabase Auth accounts with favourites, automatically recorded recommendation history, and interaction signals protected by row-level security.
 
-YouTube is the prominent listening destination. Apple is used only for catalogue lookup, artwork, and available preview audio. Cerum does not use Apple's genre or subgenre classifications in ranking. Preview audio used for fingerprinting is downloaded to a temporary file, analyzed locally, and deleted immediately; only numerical features and Cerum's category signature are retained.
+YouTube is the prominent listening destination. Apple is used for catalogue lookup, artwork, and available preview audio. Cerum's primary score comes from its own audio measurements. A separately maintained Cerum microgenre taxonomy acts as a compatibility guardrail; Apple and Spotify recommendation scores are never used. Preview audio used for fingerprinting is downloaded to a temporary file, analyzed locally, and deleted immediately; only numerical features and Cerum's category signature are retained.
 
-The default mix is 35% rhythm, 40% timbre/texture, and 25% harmony. Rhythm includes tempo, onset density, beat regularity, percussion balance, and danceability. Timbre includes MFCC shape, brightness, spectral flatness/contrast, zero-crossing rate, harmonic balance, aggression, and dynamic range. Harmony compares chroma in a transposition-tolerant way plus tonality and harmonic balance.
+The default acoustic mix is 35% rhythm, 40% timbre/texture, and 25% harmony. Rhythm includes tempo, onset density, beat regularity, percussion balance, and danceability. Timbre includes MFCC shape, brightness, spectral flatness/contrast, zero-crossing rate, harmonic balance, aggression, and dynamic range. Harmony compares chroma in a transposition-tolerant way plus tonality and harmonic balance. The resulting acoustic score is then adjusted by style compatibility; it cannot turn a poor acoustic match into a good one.
 
 ## How it works
 

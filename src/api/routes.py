@@ -139,11 +139,14 @@ def get_tracks(
     filtered = _catalog_df.copy()
 
     if q:
-        mask = (
-            filtered["title"].str.contains(q, case=False, na=False) |
-            filtered["artist"].str.contains(q, case=False, na=False) |
-            filtered["album"].str.contains(q, case=False, na=False)
+        searchable = (
+            filtered["title"].fillna("").astype(str) + " " +
+            filtered["artist"].fillna("").astype(str) + " " +
+            filtered["album"].fillna("").astype(str)
         )
+        mask = searchable.notna()
+        for term in q.split():
+            mask &= searchable.str.contains(term, case=False, regex=False)
         filtered = filtered[mask]
 
     if genre:
@@ -229,6 +232,8 @@ def recommend(req: RecommendRequest, request: Request):
             recs = _acoustic_index.recommendations(
                 anchor, _catalog_df, k=req.k, mode=req.mode, seen_track_ids=user_seen,
                 favorite_track_ids=preferences.get("track_ids", set()) if preferences else set(),
+                disliked_track_ids=preferences.get("disliked_track_ids", set()) if preferences else set(),
+                weights=(weights["audio"], weights["lyric"], weights["collab"]),
             )
         except (requests.RequestException, ValueError) as error:
             raise HTTPException(status_code=422, detail=f"MuRec2 could not analyze this track's audio: {error}") from error

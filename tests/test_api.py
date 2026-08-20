@@ -101,6 +101,16 @@ def test_provider_genres_are_not_used_for_ranking():
         assert all(item["subgenre"] == FakeAcousticIndex.signature for item in recommendations)
 
 
+def test_search_accepts_title_and_artist_in_one_query():
+    with api_client() as client:
+        response = client.get("/api/tracks", params={"q": "Duality Slipknot", "page_size": 10})
+        assert response.status_code == 200
+        assert any(
+            item["title"] == "Duality" and item["artist"] == "Slipknot"
+            for item in response.json()["results"]
+        )
+
+
 def test_invalid_weights_are_rejected():
     with api_client() as client:
         response = client.post(

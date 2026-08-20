@@ -232,8 +232,21 @@ def taste_profile(user_id: str, access_token: str | None = None) -> dict[str, se
     if access_token and supabase_store.configured():
         return supabase_store.taste_profile(access_token)
     favorites = list_favorites(user_id)
+    with connection() as db:
+        interactions = db.execute(
+            "SELECT track_id,event_type FROM interactions WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+    positive_events = {"liked", "preview_completed", "youtube_opened"}
+    negative_events = {"disliked", "dismissed"}
+    favorite_ids = {str(item["track_id"]) for item in favorites}
     return {
         "subgenres": {str(item["subgenre"]).lower() for item in favorites if item.get("subgenre")},
         "artists": {str(item["artist"]).lower() for item in favorites if item.get("artist")},
-        "track_ids": {str(item["track_id"]) for item in favorites},
+        "track_ids": favorite_ids | {
+            str(item["track_id"]) for item in interactions if item["event_type"] in positive_events
+        },
+        "disliked_track_ids": {
+            str(item["track_id"]) for item in interactions if item["event_type"] in negative_events
+        },
     }

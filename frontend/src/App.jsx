@@ -7,11 +7,11 @@ import SearchBar from "./components/SearchBar";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
-  { id: "similar", label: "Closest", description: "Balanced rhythm, timbre, texture, and harmony" },
+  { id: "similar", label: "Closest", description: "Acoustic match with a fine-style compatibility guardrail" },
   { id: "rhythm", label: "Rhythm", description: "Tempo, onset pattern, pulse, and percussion" },
   { id: "timbre", label: "Timbre", description: "Spectral texture, brightness, density, and MFCC shape" },
-  { id: "discover", label: "Surprise me", description: "A new artist at a believable acoustic distance" },
-  { id: "personalized", label: "For you", description: "Compares the audio fingerprints in your favourites" },
+  { id: "discover", label: "Surprise me", description: "A related sound from new artists—not a random detour" },
+  { id: "personalized", label: "For you", description: "Learns from favourites, full previews, YouTube opens, and dislikes" },
 ];
 
 export default function App() {
@@ -118,6 +118,10 @@ export default function App() {
   }
 
   function handleInteraction(track, eventType) { if (user) recordEvent(track.track_id, eventType).catch(() => {}); }
+  function dismissRecommendation(track) {
+    setRecommendations((items) => items.filter((item) => item.track_id !== track.track_id));
+    if (user) recordEvent(track.track_id, "disliked").catch(() => {});
+  }
   async function eraseHistory() { await clearHistory(); setHistory([]); }
   function authenticated(account) { setUser(account); refreshLibrary(); }
 
@@ -133,7 +137,7 @@ export default function App() {
       <section className="intro-section" id="top">
         <p className="kicker">Provider-neutral acoustic discovery</p>
         <h1>Matched by sound, not a genre tag.</h1>
-        <p>Cerum listens to available audio and compares rhythm, timbre, texture, dynamics, and harmony. Catalogue services supply song details and previews—not the categories.</p>
+        <p>Cerum listens to available audio and compares rhythm, timbre, texture, dynamics, and harmony, then uses its own fine-grained style map to stop broad genre collisions. Catalogue services supply song details and previews—not the ranking.</p>
         <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
         {indexStatus && <p className="index-status">Acoustic library: {indexStatus.indexed.toLocaleString()} of {indexStatus.total.toLocaleString()} songs analyzed{indexStatus.building ? " · listening in the background" : ""}</p>}
       </section>
@@ -155,16 +159,16 @@ export default function App() {
         </div>
 
         {error && <div className="notice error" role="alert">{error}</div>}
-        {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Every available match is ranked from Cerum’s stored audio measurements, not provider genre labels." : "Search the catalogue above. Cerum transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
+        {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Cerum ranks measured sound first, then applies its own microgenre compatibility guardrail—not an Apple or Spotify recommendation score." : "Search the catalogue above. Cerum transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
         <div className="results-heading"><div><p className="kicker">Ranked suggestions</p><h2>{recommendations.length ? `${recommendations.length} matches` : "Recommendations will appear here"}</h2></div>{scoreMode && <p>{scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model</p>}</div>
         <div className="recommendation-grid">
-          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); recommend(track); }} playingTrackId={playingTrackId} onPreviewChange={setPlayingTrackId} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} />)}
+          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); recommend(track); }} playingTrackId={playingTrackId} onPreviewChange={setPlayingTrackId} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
         </div>
       </section>
 
-      <footer><span>Cerum · Categories derived from audio · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
+      <footer><span>Cerum · Acoustic scoring with fine-style guardrails · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={(track) => recommend(track)} />
     </main>

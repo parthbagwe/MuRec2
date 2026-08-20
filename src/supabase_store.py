@@ -207,10 +207,22 @@ def seen_track_ids(access_token: str) -> set[str]:
 
 def taste_profile(access_token: str) -> dict[str, set[str]]:
     favorites = list_favorites(access_token)
+    interactions = _request(
+        "GET", "/rest/v1/interactions", access_token,
+        params={"select": "track_id,event_type"},
+    ) or []
+    positive_events = {"liked", "preview_completed", "youtube_opened"}
+    negative_events = {"disliked", "dismissed"}
+    favorite_ids = {str(item["track_id"]) for item in favorites}
     return {
         "subgenres": {str(item["subgenre"]).lower() for item in favorites if item.get("subgenre")},
         "artists": {str(item["artist"]).lower() for item in favorites if item.get("artist")},
-        "track_ids": {str(item["track_id"]) for item in favorites},
+        "track_ids": favorite_ids | {
+            str(item["track_id"]) for item in interactions if item.get("event_type") in positive_events
+        },
+        "disliked_track_ids": {
+            str(item["track_id"]) for item in interactions if item.get("event_type") in negative_events
+        },
     }
 
 

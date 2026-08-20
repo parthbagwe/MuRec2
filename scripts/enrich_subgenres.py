@@ -14,7 +14,7 @@ CATALOG = ROOT / "data" / "catalog" / "apple_tracks.csv"
 
 
 def enrich() -> pd.DataFrame:
-    frame = pd.read_csv(CATALOG)
+    frame = pd.read_csv(CATALOG, dtype=str, keep_default_na=False)
     frame["subgenre"] = frame.apply(
         lambda row: infer_subgenre(
             artist=row.get("artist", ""),

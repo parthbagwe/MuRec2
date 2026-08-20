@@ -24,6 +24,33 @@ const allowedEvents = new Set([
   "liked", "disliked", "dismissed",
 ]);
 
+const styleFamilies: Record<string, Set<string>> = {
+  metal: new Set([
+    "nu metal", "alternative metal", "metalcore", "thrash metal", "death metal",
+    "black metal", "doom metal", "progressive metal", "industrial metal",
+    "power metal", "symphonic metal", "glam metal", "heavy metal",
+  ]),
+  rock: new Set([
+    "progressive rock", "grunge", "alternative rock", "indie rock", "shoegaze",
+    "post punk", "pop punk", "emo", "hard rock", "psychedelic rock", "punk rock", "rock",
+  ]),
+  electronic: new Set(["electronic", "house", "techno", "drum and bass", "jungle/drum'n'bass", "dubstep", "ambient", "synthpop", "downtempo", "amapiano"]),
+  pop: new Set(["pop", "dance pop", "dream pop", "synthpop", "indie pop", "k-pop", "j-pop"]),
+  "hip-hop": new Set(["hip-hop", "trap", "boom bap", "drill"]),
+  "r&b": new Set(["r&b", "neo soul", "neo-soul", "soul", "funk"]),
+};
+const styleAdjacency: Record<string, Record<string, number>> = {
+  "nu metal": { "alternative metal": 0.78, "industrial metal": 0.62, metalcore: 0.58, "hard rock": 0.42 },
+  "alternative metal": { "progressive metal": 0.62, metalcore: 0.60, "hard rock": 0.55 },
+  "progressive metal": { "progressive rock": 0.72, "alternative metal": 0.62, "heavy metal": 0.48 },
+  "heavy metal": { "thrash metal": 0.65, "power metal": 0.58, "glam metal": 0.52, "hard rock": 0.46 },
+  "indie rock": { "alternative rock": 0.75, "post punk": 0.58, "dream pop": 0.52 },
+  "alternative rock": { grunge: 0.66, "indie rock": 0.75, "hard rock": 0.52, "progressive rock": 0.42 },
+  "progressive rock": { "psychedelic rock": 0.62, "alternative rock": 0.42, "progressive metal": 0.72 },
+  "pop punk": { emo: 0.74, "punk rock": 0.66, "alternative rock": 0.48 },
+  shoegaze: { "dream pop": 0.74, "indie rock": 0.58, "alternative rock": 0.52 },
+};
+
 class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -71,7 +98,7 @@ async function loadLibrary() {
   for (let start = 0; ; start += 1000) {
     const { data, error } = await admin
       .from("acoustic_fingerprints")
-      .select("track_id,vector,profile,acoustic_signature,tracks!inner(track_id,title,artist,album,year,artwork_url,preview_url,external_url,source)")
+      .select("track_id,vector,profile,acoustic_signature,tracks!inner(track_id,title,artist,album,year,artwork_url,preview_url,external_url,source,provider_genre,seed_genre,provider_subgenre)")
       .range(start, start + 999);
     if (error) throw new ApiError(503, `Could not load the acoustic library: ${error.message}`);
     const batch = (data ?? []).map((row: JsonRecord) => ({
@@ -123,6 +150,50 @@ function cosine(first: number[], second: number[]) {
   return dot / Math.max(Math.sqrt(normA * normB), 1e-10);
 }
 
+function normalizedStyle(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function styleFamily(value: string) {
+  for (const [family, members] of Object.entries(styleFamilies)) {
+    if (members.has(value)) return family;
+  }
+  return value;
+}
+
+function styleSimilarity(first: unknown, second: unknown) {
+  const left = normalizedStyle(first);
+  const right = normalizedStyle(second);
+  if (!left || !right) return 0.25;
+  if (left === right) return 1;
+  if (styleAdjacency[left]?.[right] !== undefined) return styleAdjacency[left][right];
+  if (styleAdjacency[right]?.[left] !== undefined) return styleAdjacency[right][left];
+  const leftFamily = styleFamily(left);
+  const rightFamily = styleFamily(right);
+  if (leftFamily === rightFamily) return 0.34;
+  if (new Set([leftFamily, rightFamily]).size === 2 && [leftFamily, rightFamily].includes("metal") && [leftFamily, rightFamily].includes("rock")) return 0.14;
+  const pair = new Set([leftFamily, rightFamily]);
+  if ((pair.has("pop") && pair.has("rock")) || (pair.has("pop") && pair.has("electronic")) || (pair.has("hip-hop") && pair.has("r&b"))) return 0.12;
+  return 0.04;
+}
+
+function weightedScore(parts: [number, number, number], weights: [number, number, number]) {
+  return weights[0] * parts[0] + weights[1] * parts[1] + weights[2] * parts[2];
+}
+
+function matchReasons(anchor: JsonRecord, candidate: JsonRecord, parts: [number, number, number]) {
+  const reasons: string[] = [];
+  const a = anchor.profile;
+  const b = candidate.profile;
+  const tempoDifference = Math.min(Math.abs(a.bpm - b.bpm), Math.abs(a.bpm - b.bpm * 2), Math.abs(a.bpm * 2 - b.bpm));
+  if (tempoDifference <= 8) reasons.push("close tempo");
+  if (a.texture === b.texture) reasons.push(`${String(a.texture).replaceAll("-", " ")} texture`);
+  if (Math.abs(a.aggression - b.aggression) <= 0.09) reasons.push("matched intensity");
+  if (a.rhythm_character === b.rhythm_character) reasons.push(`${String(a.rhythm_character).replaceAll("-", " ")} rhythm`);
+  if (parts[2] >= 0.94) reasons.push("compatible harmony");
+  return [...new Set(reasons)].slice(0, 3);
+}
+
 function components(first: JsonRecord, second: JsonRecord): [number, number, number] {
   const a = first.profile;
   const b = second.profile;
@@ -158,19 +229,41 @@ async function searchTracks(input: JsonRecord) {
   const q = String(input.q ?? "").trim().replace(/[%_,()]/g, " ");
   const page = Math.max(1, Number(input.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(input.page_size ?? 20)));
-  let query = admin
-    .from("tracks")
-    .select("track_id,title,artist,album,year,artwork_url,preview_url,external_url,source,acoustic_fingerprints(acoustic_signature,profile)", { count: "exact" });
-  if (q) query = query.or(`title.ilike.%${q}%,artist.ilike.%${q}%`);
-  const { data, error, count } = await query
-    .order("title", { ascending: true })
-    .range((page - 1) * pageSize, page * pageSize - 1);
-  if (error) throw new ApiError(503, error.message);
-  const results = (data ?? []).map((row: JsonRecord) => {
+  const selection = "track_id,title,artist,album,year,artwork_url,preview_url,external_url,source,provider_genre,seed_genre,provider_subgenre,acoustic_fingerprints(acoustic_signature,profile)";
+  let rows: JsonRecord[] = [];
+  let total = 0;
+  if (!q) {
+    const { data, error, count } = await admin.from("tracks").select(selection, { count: "exact" })
+      .order("title", { ascending: true }).range((page - 1) * pageSize, page * pageSize - 1);
+    if (error) throw new ApiError(503, error.message);
+    rows = data ?? [];
+    total = count ?? rows.length;
+  } else {
+    const terms = [...new Set([q, ...q.split(/\s+/).filter((term) => term.length > 1)])].slice(0, 7);
+    const batches = await Promise.all(terms.map((term) => admin.from("tracks").select(selection)
+      .or(`title.ilike.%${term}%,artist.ilike.%${term}%`).limit(120)));
+    const failure = batches.find(({ error }) => error)?.error;
+    if (failure) throw new ApiError(503, failure.message);
+    const merged = new Map<string, JsonRecord>();
+    for (const batch of batches) for (const row of batch.data ?? []) merged.set(String(row.track_id), row);
+    const queryTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
+    rows = [...merged.values()].map((row) => {
+      const title = String(row.title).toLowerCase();
+      const artist = String(row.artist).toLowerCase();
+      const haystack = `${title} ${artist}`;
+      const coverage = queryTerms.filter((term) => haystack.includes(term)).length / Math.max(queryTerms.length, 1);
+      const exactBoost = title === q.toLowerCase() ? 3 : artist === q.toLowerCase() ? 2.5 : title.startsWith(q.toLowerCase()) ? 2 : haystack.includes(q.toLowerCase()) ? 1 : 0;
+      return { ...row, _searchScore: coverage * 10 + exactBoost };
+    }).filter((row) => row._searchScore >= 10)
+      .sort((left, right) => right._searchScore - left._searchScore || String(left.title).localeCompare(String(right.title)));
+    total = rows.length;
+    rows = rows.slice((page - 1) * pageSize, page * pageSize);
+  }
+  const results = rows.map((row: JsonRecord) => {
     const fingerprint = Array.isArray(row.acoustic_fingerprints) ? row.acoustic_fingerprints[0] : row.acoustic_fingerprints;
     return cleanTrack(row, fingerprint);
   });
-  return { results, total: count ?? results.length, page, page_size: pageSize };
+  return { results, total, page, page_size: pageSize };
 }
 
 async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof userContext>>) {
@@ -183,17 +276,25 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   if (!anchor) throw new ApiError(404, "This track has not been acoustically analyzed yet");
 
   const seen = new Set<string>();
-  const favoriteFingerprints: JsonRecord[] = [];
+  const positiveFingerprints: JsonRecord[] = [];
+  const negativeFingerprints: JsonRecord[] = [];
   if (context) {
     const [{ data: favorites }, { data: interactions }, { data: items }] = await Promise.all([
       context.client.from("favorites").select("track_id"),
-      context.client.from("interactions").select("track_id"),
+      context.client.from("interactions").select("track_id,event_type"),
       context.client.from("recommendation_items").select("track_id"),
     ]);
     const favoriteIds = new Set((favorites ?? []).map((row: JsonRecord) => String(row.track_id)));
-    for (const row of interactions ?? []) seen.add(String(row.track_id));
+    const positiveIds = new Set<string>(favoriteIds);
+    const negativeIds = new Set<string>();
+    for (const row of interactions ?? []) {
+      seen.add(String(row.track_id));
+      if (["liked", "preview_completed", "youtube_opened"].includes(row.event_type)) positiveIds.add(String(row.track_id));
+      if (["disliked", "dismissed"].includes(row.event_type)) negativeIds.add(String(row.track_id));
+    }
     for (const row of items ?? []) seen.add(String(row.track_id));
-    favoriteFingerprints.push(...library.filter((row) => favoriteIds.has(String(row.track_id))));
+    positiveFingerprints.push(...library.filter((row) => positiveIds.has(String(row.track_id))));
+    negativeFingerprints.push(...library.filter((row) => negativeIds.has(String(row.track_id))));
   }
 
   const chosenWeights = mode === "similar" && input.weights
@@ -206,17 +307,26 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   const scored = library.flatMap((candidate) => {
     if (candidate.track_id === anchor.track_id) return [];
     if (candidate.track.title.trim().toLowerCase() === anchor.track.title.trim().toLowerCase() && candidate.track.artist.trim().toLowerCase() === anchor.track.artist.trim().toLowerCase()) return [];
-    let [rhythm, timbre, harmony] = components(anchor, candidate);
-    if (mode === "personalized" && favoriteFingerprints.length) {
-      const taste = favoriteFingerprints.map((favorite) => components(favorite, candidate));
-      const best = [0, 1, 2].map((index) => Math.max(...taste.map((parts) => parts[index])));
-      rhythm = 0.4 * rhythm + 0.6 * best[0];
-      timbre = 0.4 * timbre + 0.6 * best[1];
-      harmony = 0.4 * harmony + 0.6 * best[2];
+    let parts = components(anchor, candidate);
+    if (mode === "personalized" && positiveFingerprints.length) {
+      const taste = positiveFingerprints.map((positive) => components(positive, candidate));
+      const best = taste.sort((left, right) => weightedScore(right, chosenWeights) - weightedScore(left, chosenWeights))[0];
+      parts = [
+        0.65 * parts[0] + 0.35 * best[0],
+        0.65 * parts[1] + 0.35 * best[1],
+        0.65 * parts[2] + 0.35 * best[2],
+      ] as [number, number, number];
     }
-    const base = chosenWeights[0] * rhythm + chosenWeights[1] * timbre + chosenWeights[2] * harmony;
-    let total = mode === "discover" ? Math.max(0, 1 - Math.abs(base - 0.68) / 0.68) : base;
-    if (seen.has(String(candidate.track_id))) total *= mode === "discover" ? 0.45 : 0.82;
+    const [rhythm, timbre, harmony] = parts;
+    const base = weightedScore(parts, chosenWeights);
+    const style = styleSimilarity(anchor.track.provider_subgenre, candidate.track.provider_subgenre);
+    let total = base * (0.52 + 0.48 * style);
+    if (mode === "discover" && normalizedStyle(candidate.track.artist) === normalizedStyle(anchor.track.artist)) total *= 0.72;
+    if (seen.has(String(candidate.track_id))) total *= mode === "discover" ? 0.40 : 0.76;
+    if (negativeFingerprints.length) {
+      const negativeAffinity = Math.max(...negativeFingerprints.map((negative) => weightedScore(components(negative, candidate), chosenWeights)));
+      if (negativeAffinity > 0.72) total *= 1 - 0.45 * Math.min(1, (negativeAffinity - 0.72) / 0.28);
+    }
     return [{
       ...cleanTrack(candidate.track, candidate),
       audio_similarity: Number(rhythm.toFixed(4)),
@@ -224,16 +334,29 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
       collab_similarity: Number(harmony.toFixed(4)),
       hybrid_score: Number(Math.max(0, Math.min(1, total)).toFixed(4)),
       score_mode: `acoustic-fingerprint-${mode}`,
+      match_reasons: matchReasons(anchor, candidate, parts),
     }];
   }).sort((a, b) => b.hybrid_score - a.hybrid_score);
 
   const recordings = new Set<string>();
-  const recommendations = scored.filter((item) => {
+  const artistCounts = new Map<string, number>();
+  const diverse = scored.filter((item) => {
     const key = `${item.title.trim().toLowerCase()}::${item.artist.trim().toLowerCase()}`;
     if (recordings.has(key)) return false;
+    const artistKey = item.artist.trim().toLowerCase();
+    if ((artistCounts.get(artistKey) ?? 0) >= 2) return false;
     recordings.add(key);
+    artistCounts.set(artistKey, (artistCounts.get(artistKey) ?? 0) + 1);
     return true;
-  }).slice(0, k);
+  });
+  const recommendations = diverse.slice(0, k);
+  if (recommendations.length < k) {
+    const selected = new Set(recommendations.map((item) => item.track_id));
+    for (const item of scored) {
+      if (!selected.has(item.track_id)) recommendations.push(item);
+      if (recommendations.length >= k) break;
+    }
+  }
 
   if (context) {
     const weights = { audio: chosenWeights[0], lyric: chosenWeights[1], collab: chosenWeights[2] };

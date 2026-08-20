@@ -194,13 +194,18 @@ ARTIST_INDEX = sorted(
 def infer_subgenre(artist: str, genre: str, seed_genre: str = "", title: str = "") -> str:
     artist_key = _normalize(artist)
     title_key = _normalize(title)
+    artist_parts = {
+        _normalize(part) for part in re.split(
+            r"\s*(?:&|,|/|;|\bfeat\.?\b|\bfeaturing\b|\bx\b)\s*",
+            str(artist).lower(),
+        ) if _normalize(part)
+    }
     for (override_artist, override_title), subgenre in TRACK_OVERRIDES.items():
-        if _normalize(override_artist) in artist_key and title_key.startswith(_normalize(override_title)):
+        if (_normalize(override_artist) == artist_key or _normalize(override_artist) in artist_parts) and title_key.startswith(_normalize(override_title)):
             return subgenre
 
-    padded_artist = f" {artist_key} "
     for known_artist, subgenre in ARTIST_INDEX:
-        if f" {known_artist} " in padded_artist:
+        if known_artist == artist_key or known_artist in artist_parts:
             return subgenre
 
     normalized_genre = _normalize(genre)

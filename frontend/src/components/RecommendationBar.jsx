@@ -15,7 +15,7 @@ function HeartIcon({ filled }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" fill={filled ? "currentColor" : "none"} /></svg>;
 }
 
-export default function RecommendationCard({ rec, rank, onClick, playingTrackId, onPreviewChange, isFavorite, onToggleFavorite, onInteraction }) {
+export default function RecommendationCard({ rec, rank, onClick, playingTrackId, onPreviewChange, isFavorite, onToggleFavorite, onInteraction, onDismiss }) {
   const audioRef = useRef(null);
   const isPlaying = playingTrackId === rec.track_id;
 
@@ -66,6 +66,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
           <div><h3>{rec.title}</h3><p>{rec.artist}</p><small>{rec.subgenre || rec.genre}{rec.year ? ` · ${rec.year}` : ""}</small></div>
         </div>
         <ScoreBreakdown rec={rec} />
+        {rec.match_reasons?.length > 0 && <div className="match-reasons" aria-label="Why this matches">{rec.match_reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>}
       </button>
 
       <div className="card-actions">
@@ -75,6 +76,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
           </button>
         ) : <span className="preview-unavailable">No preview</span>}
         <a className="youtube-button" href={youtubeSearchUrl(rec)} target="_blank" rel="noreferrer" onClick={() => onInteraction(rec, "youtube_opened")}>YouTube ↗</a>
+        <button className="dismiss-button" onClick={() => onDismiss(rec)} aria-label={`Show fewer songs like ${rec.title}`}>Not for me</button>
       </div>
       {rec.preview_url && <small className="preview-credit">30-second preview courtesy of iTunes</small>}
       {rec.preview_url && (

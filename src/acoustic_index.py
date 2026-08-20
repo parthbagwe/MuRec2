@@ -19,6 +19,7 @@ import requests
 from src.config import ROOT_DIR
 from src.features.audio_analysis import analyze_audio
 from src import supabase_store
+from src.subgenres import subgenre_similarity
 
 INDEX_PATH = ROOT_DIR / "data" / "acoustic-fingerprints.db"
 MAX_PREVIEW_BYTES = 15 * 1024 * 1024
@@ -262,6 +263,8 @@ class AcousticIndex:
     def recommendations(
         self, anchor: dict, catalog: pd.DataFrame, k: int = 12, mode: str = "similar",
         seen_track_ids: set[str] | None = None, favorite_track_ids: set[str] | None = None,
+        disliked_track_ids: set[str] | None = None,
+        weights: tuple[float, float, float] | None = None,
     ) -> list[dict]:
         indexed = self.all()
         rows = {str(row["track_id"]): row for row in catalog.to_dict("records")}
@@ -271,7 +274,8 @@ class AcousticIndex:
             anchor_fp = self.fingerprint_track(anchor)
             indexed[anchor_id] = anchor_fp
         favorites = [indexed[track_id] for track_id in (favorite_track_ids or set()) if track_id in indexed]
-        weights = MODE_WEIGHTS.get(mode, MODE_WEIGHTS["similar"])
+        disliked = [indexed[track_id] for track_id in (disliked_track_ids or set()) if track_id in indexed]
+        chosen_weights = weights if mode == "similar" and weights else MODE_WEIGHTS.get(mode, MODE_WEIGHTS["similar"])
         seen = seen_track_ids or set()
         scored = []
         for track_id, candidate_fp in indexed.items():
@@ -283,16 +287,41 @@ class AcousticIndex:
             rhythm, timbre, harmony = self.components(anchor_fp, candidate_fp)
             if mode == "personalized" and favorites:
                 favorite_components = [self.components(favorite, candidate_fp) for favorite in favorites]
-                taste = tuple(max(parts[index] for parts in favorite_components) for index in range(3))
-                rhythm, timbre, harmony = tuple(.40 * anchor_part + .60 * taste_part for anchor_part, taste_part in zip((rhythm, timbre, harmony), taste))
-            base = weights[0] * rhythm + weights[1] * timbre + weights[2] * harmony
-            if mode == "discover":
-                total = max(0.0, 1 - abs(base - .68) / .68)
-                if track_id in seen:
-                    total *= .45
-            else:
-                total = base * (.82 if track_id in seen else 1.0)
+                taste = max(favorite_components, key=lambda parts: sum(weight * part for weight, part in zip(chosen_weights, parts)))
+                rhythm, timbre, harmony = tuple(.65 * anchor_part + .35 * taste_part for anchor_part, taste_part in zip((rhythm, timbre, harmony), taste))
+            parts = (rhythm, timbre, harmony)
+            base = sum(weight * part for weight, part in zip(chosen_weights, parts))
+            style = subgenre_similarity(anchor.get("subgenre", ""), row.get("subgenre", ""))
+            total = base * (.52 + .48 * style)
+            if mode == "discover" and str(row.get("artist", "")).casefold() == str(anchor.get("artist", "")).casefold():
+                total *= .72
+            if track_id in seen:
+                total *= .40 if mode == "discover" else .76
+            if disliked:
+                negative_affinity = max(
+                    sum(weight * part for weight, part in zip(chosen_weights, self.components(item, candidate_fp)))
+                    for item in disliked
+                )
+                if negative_affinity > .72:
+                    total *= 1 - .45 * min(1, (negative_affinity - .72) / .28)
             signature = candidate_fp["acoustic_signature"]
+            profile_a, profile_b = anchor_fp["profile"], candidate_fp["profile"]
+            tempo_difference = min(
+                abs(profile_a["bpm"] - profile_b["bpm"]),
+                abs(profile_a["bpm"] - profile_b["bpm"] * 2),
+                abs(profile_a["bpm"] * 2 - profile_b["bpm"]),
+            )
+            reasons = []
+            if tempo_difference <= 8:
+                reasons.append("close tempo")
+            if profile_a.get("texture") == profile_b.get("texture"):
+                reasons.append(f"{profile_a['texture'].replace('-', ' ')} texture")
+            if abs(profile_a.get("aggression", 0) - profile_b.get("aggression", 0)) <= .09:
+                reasons.append("matched intensity")
+            if profile_a.get("rhythm_character") == profile_b.get("rhythm_character"):
+                reasons.append(f"{profile_a['rhythm_character'].replace('-', ' ')} rhythm")
+            if harmony >= .94:
+                reasons.append("compatible harmony")
             scored.append({
                 "track_id": track_id, "title": row["title"], "artist": row["artist"],
                 "genre": "MuRec2 acoustic", "subgenre": signature,
@@ -303,14 +332,25 @@ class AcousticIndex:
                 "lyric_similarity": round(timbre, 4), "collab_similarity": round(harmony, 4),
                 "hybrid_score": round(float(np.clip(total, 0, 1)), 4),
                 "score_mode": f"acoustic-fingerprint-{mode}",
+                "match_reasons": list(dict.fromkeys(reasons))[:3],
             })
-        unique, recordings = [], set()
+        unique, recordings, artist_counts = [], set(), {}
         for item in sorted(scored, key=lambda value: value["hybrid_score"], reverse=True):
             key = (item["title"].casefold().strip(), item["artist"].casefold().strip())
-            if key in recordings:
+            artist_key = item["artist"].casefold().strip()
+            if key in recordings or artist_counts.get(artist_key, 0) >= 2:
                 continue
             recordings.add(key)
+            artist_counts[artist_key] = artist_counts.get(artist_key, 0) + 1
             unique.append(item)
             if len(unique) >= k:
                 break
+        if len(unique) < k:
+            selected = {item["track_id"] for item in unique}
+            for item in sorted(scored, key=lambda value: value["hybrid_score"], reverse=True):
+                if item["track_id"] not in selected:
+                    unique.append(item)
+                    selected.add(item["track_id"])
+                if len(unique) >= k:
+                    break
         return unique

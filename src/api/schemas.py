@@ -46,6 +46,7 @@ class RecommendationResponse(BaseModel):
     external_url: Optional[str] = None
     source: Optional[str] = None
     score_mode: str = "hybrid"
+    match_reasons: list[str] = Field(default_factory=list)
 
 
 class RecommendRequest(BaseModel):
