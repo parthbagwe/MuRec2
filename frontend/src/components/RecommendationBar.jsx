@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { motion } from "motion/react";
 import ScoreBreakdown from "./ScoreBreakdown";
 
 function youtubeSearchUrl(rec) {
@@ -37,7 +38,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
       onPreviewChange(null);
       return;
     }
-    onPreviewChange(rec.track_id);
+    onPreviewChange(rec);
     try {
       await audio.play();
       onInteraction(rec, "preview_started");
@@ -49,7 +50,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
   const artwork = rec.artwork_url?.replace("100x100bb", "300x300bb");
 
   return (
-    <article className={`recommendation-card ${isPlaying ? "is-playing" : ""} ${rec.score_mode === "acoustic-transition" ? "transition-card" : ""}`}>
+    <motion.article layout initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .45, delay: Math.min(rank * .045, .3) }} className={`recommendation-card ${isPlaying ? "is-playing" : ""} ${rec.score_mode === "acoustic-transition" ? "transition-card" : ""}`}>
       <div className="card-heading">
         <span className="rank">{rec.transition_step ? `${String(rec.transition_step).padStart(2, "0")} → ${String(rec.transition_step + 1).padStart(2, "0")}` : String(rank).padStart(2, "0")}</span>
         <span className="score">{Math.round(rec.hybrid_score * 100)}% {rec.transition_step ? "flow" : "match"}</span>
@@ -82,8 +83,8 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
       </div>
       {rec.preview_url && <small className="preview-credit">30-second preview courtesy of iTunes</small>}
       {rec.preview_url && (
-        <audio ref={audioRef} src={rec.preview_url} preload="none" onEnded={() => { onPreviewChange(null); onInteraction(rec, "preview_completed"); }} onPause={() => isPlaying && audioRef.current?.currentTime > 0 && onPreviewChange(null)} />
+        <audio ref={audioRef} src={rec.preview_url} preload="none" onEnded={() => { onPreviewChange(null); onInteraction(rec, "preview_completed"); }} />
       )}
-    </article>
+    </motion.article>
   );
 }

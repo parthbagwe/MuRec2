@@ -12,6 +12,7 @@
     "@supabase/supabase-js": "2.112.3",
     "@vitejs/plugin-react": "latest",
     "axios": "latest",
+    "motion": "^13.1.0",
     "react": "latest",
     "react-dom": "latest",
     "vite": "latest"

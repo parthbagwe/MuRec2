@@ -35,7 +35,7 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
       onPreviewChange(null);
       return;
     }
-    onPreviewChange(track.track_id);
+    onPreviewChange(track);
     try {
       await audio.play();
       onInteraction(track, "preview_started");
@@ -70,7 +70,6 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
           src={track.preview_url}
           preload="none"
           onEnded={() => { onPreviewChange(null); onInteraction(track, "preview_completed"); }}
-          onPause={() => isPlaying && audioRef.current?.currentTime > 0 && onPreviewChange(null)}
         />
       )}
     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
@@ -16,7 +17,35 @@ const MODES = [
   { id: "transition", label: "Transition run", description: "Five ordered songs matched step by step for tempo, key, energy, and texture" },
 ];
 
+const MOODS = {
+  idle: { name: "ready to listen", meaning: "curiosity · possibility", colors: ["#f0ff37", "#6c57ff", "#ff5aa5"] },
+  red: { name: "red frequency", meaning: "love · excitement", colors: ["#ff3d2e", "#ff8a00", "#ffb7c8"] },
+  blue: { name: "blue frequency", meaning: "calmness · introspection", colors: ["#2f67ff", "#8fc7ff", "#7654dc"] },
+  yellow: { name: "yellow frequency", meaning: "warmth · energy", colors: ["#f7ff30", "#ffbe28", "#ff6544"] },
+  purple: { name: "purple frequency", meaning: "mystery · depth", colors: ["#6540c9", "#b37bff", "#263ca8"] },
+  green: { name: "green frequency", meaning: "organic · grounded", colors: ["#32c45b", "#b9ee45", "#37a3a3"] },
+  white: { name: "white frequency", meaning: "clarity · stillness", colors: ["#f7f5ed", "#cbeeff", "#ded6ff"] },
+  brown: { name: "earth frequency", meaning: "strength · warmth", colors: ["#9a4f22", "#e49948", "#6d3824"] },
+  black: { name: "black frequency", meaning: "weight · intensity", colors: ["#121212", "#402c63", "#a32945"] },
+};
+
+function moodForTrack(track) {
+  if (!track) return { id: "idle", ...MOODS.idle };
+  const words = `${track.acoustic_signature || ""} ${track.subgenre || ""}`.toLowerCase();
+  const energy = Number(track.energy ?? 50);
+  const valence = Number(track.valence ?? .5);
+  if (/aggressive|ferocious|extreme|metalcore|death|industrial|hardcore|nu metal|dense-noisy|noisy-distorted/.test(words) || energy >= 82) return { id: "black", ...MOODS.black };
+  if (/dark|minor|melanch|sad|goth|doom|restrained/.test(words) || valence < .32) return { id: "blue", ...MOODS.blue };
+  if (/ambient|airy|sparse|minimal|ethereal/.test(words) || energy < 28) return { id: "white", ...MOODS.white };
+  if (/psychedelic|experimental|dream|mystery|art rock|progressive/.test(words)) return { id: "purple", ...MOODS.purple };
+  if (/folk|organic|country|roots|earth|gentle/.test(words)) return { id: "green", ...MOODS.green };
+  if (/soul|warm|blues|jazz|classic|harmonic/.test(words)) return { id: "brown", ...MOODS.brown };
+  if (/bright|dance|pop|funk|rhythm-forward|upbeat/.test(words) || valence > .68) return { id: "yellow", ...MOODS.yellow };
+  return { id: "red", ...MOODS.red };
+}
+
 export default function App() {
+  const reducedMotion = useReducedMotion();
   const [selected, setSelected] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
@@ -26,6 +55,7 @@ export default function App() {
   const [audioProfile, setAudioProfile] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [playingTrackId, setPlayingTrackId] = useState(null);
+  const [moodTrack, setMoodTrack] = useState(null);
   const [user, setUser] = useState(null);
   const [favorites, setFavorites] = useState([]);
   const [history, setHistory] = useState([]);
@@ -35,6 +65,7 @@ export default function App() {
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
   const weightLabels = { audio: "rhythm", lyric: "timbre", collab: "harmony" };
+  const activeMood = useMemo(() => moodForTrack(moodTrack), [moodTrack]);
 
   useEffect(() => {
     getMe().then((response) => { setUser(response.data.user); refreshLibrary(); }).catch(() => {});
@@ -57,7 +88,7 @@ export default function App() {
 
   async function recommend(track, nextWeights = weights, nextMode = mode) {
     if (nextMode === "personalized" && !user) { setAuthOpen(true); return; }
-    setPlayingTrackId(null);
+    handlePreviewChange(null);
     setSelected(track);
     setLoading(true);
     setError("");
@@ -79,7 +110,7 @@ export default function App() {
   }
 
   async function analyze(file, title) {
-    setPlayingTrackId(null);
+    handlePreviewChange(null);
     setAnalyzing(true);
     setError("");
     try {
@@ -120,6 +151,10 @@ export default function App() {
   }
 
   function handleInteraction(track, eventType) { if (user) recordEvent(track.track_id, eventType).catch(() => {}); }
+  function handlePreviewChange(track) {
+    setPlayingTrackId(track?.track_id || null);
+    setMoodTrack(track || null);
+  }
   function dismissRecommendation(track) {
     setRecommendations((items) => items.filter((item) => item.track_id !== track.track_id));
     if (user) recordEvent(track.track_id, "disliked").catch(() => {});
@@ -128,35 +163,64 @@ export default function App() {
   function authenticated(account) { setUser(account); refreshLibrary(); }
 
   return (
-    <main>
-      <header className="app-header">
+    <main className={`app-shell mood-${activeMood.id}`}>
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={activeMood.id}
+          className="mood-layer"
+          style={{ "--mood-a": activeMood.colors[0], "--mood-b": activeMood.colors[1], "--mood-c": activeMood.colors[2] }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: reducedMotion ? 0 : 3, ease: [0.22, 1, 0.36, 1] }}
+          aria-hidden="true"
+        />
+      </AnimatePresence>
+      <div className="flow-field" aria-hidden="true" />
+      <motion.header className="app-header" initial={{ y: -64 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 160, damping: 24 }}>
         <a className="logo" href="#top" aria-label="Cerum home">Cerum</a>
+        <p className="header-manifesto">Sound has shape. Find its echo.</p>
         <nav aria-label="Account">
           {user ? <><button className="header-button" onClick={() => setLibraryOpen(true)}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <button className="header-button" onClick={() => setAuthOpen(true)}>Sign in</button>}
         </nav>
-      </header>
+      </motion.header>
 
       <section className="intro-section" id="top">
-        <p className="kicker">Provider-neutral acoustic discovery</p>
-        <h1>Matched by sound, not a genre tag.</h1>
-        <p>Cerum listens to available audio and compares rhythm, timbre, texture, dynamics, and harmony, then uses its own fine-grained style map to stop broad genre collisions. Catalogue services supply song details and previews—not the ranking.</p>
-        <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
-        {indexStatus && <p className="index-status">Acoustic library: {indexStatus.indexed.toLocaleString()} of {indexStatus.total.toLocaleString()} songs analyzed{indexStatus.building ? " · listening in the background" : ""}</p>}
+        <div className="hero-grid">
+          <motion.div className="hero-copy" initial={{ opacity: 0, y: 36 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7, ease: [0.22, 1, 0.36, 1] }}>
+            <p className="kicker">01 / Acoustic discovery engine</p>
+            <h1>Don’t sort music.<br /><span>Feel its shape.</span></h1>
+            <p>Cerum hears rhythm, timbre, texture, dynamics and harmony—then finds the songs that live near the same feeling.</p>
+          </motion.div>
+          <div className="hero-mood" aria-live="polite">
+            <span className="hero-mood-number">{playingTrackId ? "LIVE" : "IDLE"}</span>
+            <div>
+              <small>visual state</small>
+              <strong>{activeMood.name}</strong>
+              <p>{activeMood.meaning}</p>
+            </div>
+          </div>
+        </div>
+        <motion.div className="search-stage" initial={{ opacity: 0, scaleX: .96 }} animate={{ opacity: 1, scaleX: 1 }} transition={{ delay: .18, duration: .65 }}>
+          <p className="search-label">Start with one song</p>
+          <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
+          {indexStatus && <p className="index-status"><span className={indexStatus.building ? "status-dot building" : "status-dot"} />{indexStatus.indexed.toLocaleString()} / {indexStatus.total.toLocaleString()} acoustic fingerprints ready</p>}
+        </motion.div>
       </section>
 
       <section className="workspace">
         <div className="mode-section">
-          <div className="section-title"><p className="kicker">Recommendation approach</p><h2>Choose a direction</h2></div>
+          <div className="section-title"><p className="kicker">02 / Recommendation path</p><h2>Choose how<br />to move.</h2></div>
           <div className="mode-selector">
-            {MODES.map((item) => <button key={item.id} className={mode === item.id ? "active" : ""} onClick={() => chooseMode(item.id)}><strong>{item.label}{item.id === "personalized" && !user ? " · sign in" : ""}</strong><span>{item.description}</span></button>)}
+            {MODES.map((item, index) => <motion.button key={item.id} className={mode === item.id ? "active" : ""} onClick={() => chooseMode(item.id)} whileHover={{ y: -4 }} whileTap={{ scale: .98 }}><em>{String(index + 1).padStart(2, "0")}</em><strong>{item.label}{item.id === "personalized" && !user ? " · sign in" : ""}</strong><span>{item.description}</span></motion.button>)}
           </div>
         </div>
 
         <div className="controls-card">
           <div className="reference-track">
-            <p className="kicker">Current reference</p>
+            <p className="kicker">03 / Current signal</p>
             {selected
-              ? <TrackPreview track={selected} playingTrackId={playingTrackId} onPreviewChange={setPlayingTrackId} onInteraction={handleInteraction} />
+              ? <TrackPreview track={selected} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} />
               : <h2>Select a track above</h2>}
           </div>
           <div className="sliders">
@@ -171,9 +235,9 @@ export default function App() {
         {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Cerum ranks measured sound first, then applies its own microgenre compatibility guardrail—not an Apple or Spotify recommendation score." : "Search the catalogue above. Cerum transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
-        <div className="results-heading"><div><p className="kicker">{mode === "transition" ? "Ordered transition path" : "Ranked suggestions"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} matches`) : "Recommendations will appear here"}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : `${scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model`}</p>}</div>
+        <div className="results-heading"><div><p className="kicker">04 / {mode === "transition" ? "Ordered transition path" : "Ranked suggestions"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} sonic neighbours`) : "Your next sound starts here."}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : `${scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model`}</p>}</div>
         <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
-          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); recommend(track); }} playingTrackId={playingTrackId} onPreviewChange={setPlayingTrackId} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
+          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); recommend(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
         </div>
       </section>
 
