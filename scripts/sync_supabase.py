@@ -11,8 +11,11 @@ import csv
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import sys
+import time
+import unicodedata
 
 import requests
 
@@ -37,14 +40,24 @@ def _headers(key: str) -> dict[str, str]:
 
 
 def _upsert(url: str, key: str, table: str, rows: list[dict]) -> None:
-    response = requests.post(
-        f"{url}/rest/v1/{table}?on_conflict=track_id",
-        headers=_headers(key),
-        json=rows,
-        timeout=(5, 45),
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"{table} sync failed: {response.status_code} {response.text[:500]}")
+    last_error: Exception | None = None
+    for attempt in range(5):
+        try:
+            response = requests.post(
+                f"{url}/rest/v1/{table}?on_conflict=track_id",
+                headers=_headers(key),
+                json=rows,
+                timeout=(15, 60),
+            )
+            if response.status_code < 400:
+                return
+            if response.status_code not in {408, 425, 429, 500, 502, 503, 504}:
+                raise RuntimeError(f"{table} sync failed: {response.status_code} {response.text[:500]}")
+            last_error = RuntimeError(f"{table} sync failed: {response.status_code} {response.text[:500]}")
+        except requests.RequestException as error:
+            last_error = error
+        time.sleep(2 ** attempt)
+    raise RuntimeError(f"{table} sync failed after retries: {last_error}")
 
 
 def _batches(rows, size: int = 200):
@@ -66,6 +79,53 @@ def _optional(value: str | None):
 def _integer(value: str | None):
     value = _optional(value)
     return int(float(value)) if value else None
+
+
+def _recording_key(title: str | None, artist: str | None) -> tuple[str, str]:
+    def normalize(value: str | None) -> str:
+        text = unicodedata.normalize("NFKD", str(value or "")).casefold()
+        return re.sub(r"[^\w]+", " ", text, flags=re.UNICODE).strip()
+
+    return normalize(title), normalize(artist)
+
+
+def _remote_rows(url: str, key: str, table: str, select: str):
+    offset = 0
+    while True:
+        response = requests.get(
+            f"{url}/rest/v1/{table}",
+            headers=_headers(key),
+            params={"select": select, "limit": 1000, "offset": offset},
+            timeout=(15, 60),
+        )
+        response.raise_for_status()
+        rows = response.json()
+        yield from rows
+        if len(rows) < 1000:
+            break
+        offset += len(rows)
+
+
+def _prune_duplicate_editions(url: str, key: str, tracks: list[dict]) -> int:
+    valid_ids = {row["track_id"] for row in tracks}
+    valid_recordings = {_recording_key(row["title"], row["artist"]) for row in tracks}
+    favorited_ids = {row["track_id"] for row in _remote_rows(url, key, "favorites", "track_id")}
+    obsolete_ids = [
+        row["track_id"]
+        for row in _remote_rows(url, key, "tracks", "track_id,title,artist")
+        if row["track_id"] not in valid_ids
+        and row["track_id"] not in favorited_ids
+        and _recording_key(row.get("title"), row.get("artist")) in valid_recordings
+    ]
+    for batch in _batches(iter(obsolete_ids), size=100):
+        response = requests.delete(
+            f"{url}/rest/v1/tracks",
+            headers=_headers(key),
+            params={"track_id": f"in.({','.join(batch)})"},
+            timeout=(15, 60),
+        )
+        response.raise_for_status()
+    return len(obsolete_ids)
 
 
 def catalogue_rows():
@@ -111,12 +171,19 @@ def fingerprint_rows(valid_track_ids: set[str]):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--catalog-only", action="store_true")
+    parser.add_argument(
+        "--prune-duplicate-editions",
+        action="store_true",
+        help="Remove only unfavourited cloud rows that duplicate a local title/artist recording",
+    )
     arguments = parser.parse_args()
     url, key = _configuration()
     tracks = list(catalogue_rows())
     for batch in _batches(iter(tracks)):
         _upsert(url, key, "tracks", batch)
     print(f"Synced {len(tracks):,} catalogue tracks.")
+    if arguments.prune_duplicate_editions:
+        print(f"Removed {_prune_duplicate_editions(url, key, tracks):,} unfavourited duplicate editions.")
     if not arguments.catalog_only:
         count = 0
         for batch in _batches(fingerprint_rows({row["track_id"] for row in tracks}), size=100):

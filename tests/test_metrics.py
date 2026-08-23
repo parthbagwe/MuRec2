@@ -2,7 +2,7 @@ import numpy as np
 
 from src.evaluation.metrics import coverage, intra_list_diversity, ndcg_at_k, precision_at_k, recall_at_k
 from src.subgenres import infer_subgenre, subgenre_similarity
-from src.acoustic_index import AcousticIndex
+from src.acoustic_index import AcousticIndex, _recording_identity
 
 
 def test_ranking_metrics():
@@ -29,6 +29,12 @@ def test_microgenre_guardrail_distinguishes_broad_neighbors():
 
 def test_artist_taxonomy_does_not_match_a_name_fragment():
     assert infer_subgenre("Marc Korn", "Dance", "electronic", "Example") != "nu metal"
+
+
+def test_soundtrack_label_does_not_create_a_second_recording_identity():
+    assert _recording_identity("Aaruyire", "A.R. Rahman") == _recording_identity(
+        'Aaruyire (From "Guru")', "A.R. Rahman"
+    )
 
 
 def _fingerprint(bpm, key, mode="major", energy=55):

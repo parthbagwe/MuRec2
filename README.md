@@ -2,10 +2,10 @@
 
 Cerum is an explainable, provider-neutral music recommendation app. Pick a track and it analyzes available audio, ranks songs by rhythm, timbre/texture, harmony, and dynamics, then applies Cerum's own fine-grained style compatibility guardrail to prevent broad-category collisions. Spotify and Apple recommendation scores are not used.
 
-- **Real catalogue search** — 4,664 real songs imported through Apple's official iTunes Search API, spanning 25 additional styles including nuanced metal, electronic, jazz, soul, Latin, Indian, African, and East Asian categories.
+- **Real catalogue search** — 5,896 distinct real songs imported through Apple's official iTunes Search API, including a balanced 1,500-song English, Hindi, and Tamil expansion alongside nuanced metal, electronic, jazz, soul, Latin, Indian, African, and East Asian coverage.
 - **Audio-derived categories** — Cerum assigns a five-part signature covering intensity, texture, rhythm character, harmonic character, and tempo band.
 - **Acoustic-first recommendations** — transparent rhythm, timbre, and harmony scores derived from actual audio fingerprints, with a microgenre guardrail that separates cases such as nu metal and alternative rock.
-- **Streamed previews** — 4,661 short samples that play on demand, with an animated circular visualizer.
+- **Streamed previews** — 5,893 short samples that play on demand, with an animated circular visualizer.
 - **YouTube discovery** — every recommendation has a YouTube search link for the song and artist.
 - **Unknown-song analysis** — transient analysis of user-provided audio for tempo, timbre, spectral measurements, MFCCs, chroma, and key.
 - **Multiple discovery modes** — balanced similarity, rhythm-first, timbre-first, relevant discovery, personalization, and a five-step transition run.
@@ -34,7 +34,7 @@ Build or resume the full index manually:
 python scripts/build_acoustic_index.py --workers 2
 ```
 
-Use `--limit 50` for a bounded batch. The full 4,664-song catalogue takes time because every available preview is decoded and analyzed rather than classified from metadata.
+Use `--limit 50` for a bounded batch. The full 5,896-song catalogue takes time because every available preview is decoded and analyzed rather than classified from metadata.
 
 If a title is not in the local catalogue, Cerum supplements lookup results with a live search and fingerprints an available preview on demand. If usable audio is unavailable, the UI offers an upload fallback. Cerum analyzes up to 45 seconds, extracts tempo, energy, spectral measurements, MFCCs, chroma, harmonic/percussive balance, onset density, beat regularity, dynamics, tonal strength, danceability, and aggression, then compares that fingerprint directly with the acoustic index. Uploaded audio is deleted immediately and never added to the repository.
 

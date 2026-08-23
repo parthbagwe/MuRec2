@@ -155,6 +155,15 @@ function normalizedStyle(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function recordingIdentity(title: unknown, artist: unknown) {
+  const baseTitle = normalizedStyle(title)
+    .replace(/\s+(?:[-–—]\s*)?(?:\(|\[)?(?:from\b|.*\bremaster(?:ed)?\b|radio edit|single version|album version|soundtrack).*?(?:\)|\])?$/i, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+  const artistKey = normalizedStyle(artist).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return `${baseTitle}::${artistKey}`;
+}
+
 function styleFamily(value: string) {
   for (const [family, members] of Object.entries(styleFamilies)) {
     if (members.has(value)) return family;
@@ -367,13 +376,13 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   let recommendations: JsonRecord[];
   if (mode === "transition") {
     const usedTrackIds = new Set<string>([String(anchor.track_id)]);
-    const usedRecordings = new Set<string>([`${normalizedStyle(anchor.track.title)}::${normalizedStyle(anchor.track.artist)}`]);
+    const usedRecordings = new Set<string>([recordingIdentity(anchor.track.title, anchor.track.artist)]);
     const usedArtists = new Set<string>([normalizedStyle(anchor.track.artist)]);
     const chain: JsonRecord[] = [];
     let previous = anchor;
     for (let step = 1; step <= k; step += 1) {
       const shortlist = library.flatMap((candidate) => {
-        const recordingKey = `${normalizedStyle(candidate.track.title)}::${normalizedStyle(candidate.track.artist)}`;
+        const recordingKey = recordingIdentity(candidate.track.title, candidate.track.artist);
         if (usedTrackIds.has(String(candidate.track_id)) || usedRecordings.has(recordingKey)) return [];
         if (!candidate.track.preview_url) return [];
         const tempo = Math.exp(-transitionTempoDifference(previous.profile.bpm, candidate.profile.bpm) / 12);
@@ -410,7 +419,7 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   } else {
     const scored = library.flatMap((candidate) => {
     if (candidate.track_id === anchor.track_id) return [];
-    if (candidate.track.title.trim().toLowerCase() === anchor.track.title.trim().toLowerCase() && candidate.track.artist.trim().toLowerCase() === anchor.track.artist.trim().toLowerCase()) return [];
+    if (recordingIdentity(candidate.track.title, candidate.track.artist) === recordingIdentity(anchor.track.title, anchor.track.artist)) return [];
     let parts = components(anchor, candidate);
     if (mode === "personalized" && positiveFingerprints.length) {
       const taste = positiveFingerprints.map((positive) => components(positive, candidate));
@@ -445,7 +454,7 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
     const recordings = new Set<string>();
     const artistCounts = new Map<string, number>();
     const diverse = scored.filter((item) => {
-      const key = `${item.title.trim().toLowerCase()}::${item.artist.trim().toLowerCase()}`;
+      const key = recordingIdentity(item.title, item.artist);
       if (recordings.has(key)) return false;
       const artistKey = item.artist.trim().toLowerCase();
       if ((artistCounts.get(artistKey) ?? 0) >= 2) return false;
@@ -456,8 +465,14 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
     recommendations = diverse.slice(0, k);
     if (recommendations.length < k) {
       const selected = new Set(recommendations.map((item) => item.track_id));
+      const selectedRecordings = new Set(recommendations.map((item) => recordingIdentity(item.title, item.artist)));
       for (const item of scored) {
-        if (!selected.has(item.track_id)) recommendations.push(item);
+        const key = recordingIdentity(item.title, item.artist);
+        if (!selected.has(item.track_id) && !selectedRecordings.has(key)) {
+          recommendations.push(item);
+          selected.add(item.track_id);
+          selectedRecordings.add(key);
+        }
         if (recommendations.length >= k) break;
       }
     }

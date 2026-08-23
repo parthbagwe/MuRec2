@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import json
 import math
 from pathlib import Path
+import re
 import sqlite3
 import tempfile
 import threading
@@ -32,6 +33,19 @@ MODE_WEIGHTS = {
     "transition": (0.42, 0.25, 0.33),
 }
 KEY_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def _recording_identity(title: object, artist: object) -> tuple[str, str]:
+    title_key = str(title or "").casefold().strip()
+    title_key = re.sub(
+        r"\s+(?:[-–—]\s*)?(?:\(|\[)?(?:from\b|.*\bremaster(?:ed)?\b|radio edit|single version|album version|soundtrack).*?(?:\)|\])?$",
+        "",
+        title_key,
+        flags=re.IGNORECASE,
+    )
+    title_key = re.sub(r"[^\w]+", " ", title_key, flags=re.UNICODE).strip()
+    artist_key = re.sub(r"[^\w]+", " ", str(artist or "").casefold(), flags=re.UNICODE).strip()
+    return title_key, artist_key
 
 
 class AcousticIndex:
@@ -338,7 +352,7 @@ class AcousticIndex:
     ) -> list[dict]:
         anchor_id = str(anchor["track_id"])
         used_ids = {anchor_id}
-        used_recordings = {(str(anchor.get("title", "")).casefold().strip(), str(anchor.get("artist", "")).casefold().strip())}
+        used_recordings = {_recording_identity(anchor.get("title"), anchor.get("artist"))}
         used_artists = {str(anchor.get("artist", "")).casefold().strip()}
         chain = []
         previous_fp, previous_row = anchor_fp, anchor
@@ -348,7 +362,7 @@ class AcousticIndex:
                 if track_id in used_ids or track_id not in rows:
                     continue
                 row = rows[track_id]
-                recording_key = (str(row.get("title", "")).casefold().strip(), str(row.get("artist", "")).casefold().strip())
+                recording_key = _recording_identity(row.get("title"), row.get("artist"))
                 preview_url = row.get("preview_url")
                 if recording_key in used_recordings or not isinstance(preview_url, str) or not preview_url.strip():
                     continue
@@ -411,7 +425,7 @@ class AcousticIndex:
             if track_id == anchor_id or track_id not in rows:
                 continue
             row = rows[track_id]
-            if str(row.get("title", "")).casefold() == str(anchor.get("title", "")).casefold() and str(row.get("artist", "")).casefold() == str(anchor.get("artist", "")).casefold():
+            if _recording_identity(row.get("title"), row.get("artist")) == _recording_identity(anchor.get("title"), anchor.get("artist")):
                 continue
             rhythm, timbre, harmony = self.components(anchor_fp, candidate_fp)
             if mode == "personalized" and favorites:
@@ -465,7 +479,7 @@ class AcousticIndex:
             })
         unique, recordings, artist_counts = [], set(), {}
         for item in sorted(scored, key=lambda value: value["hybrid_score"], reverse=True):
-            key = (item["title"].casefold().strip(), item["artist"].casefold().strip())
+            key = _recording_identity(item["title"], item["artist"])
             artist_key = item["artist"].casefold().strip()
             if key in recordings or artist_counts.get(artist_key, 0) >= 2:
                 continue
@@ -476,10 +490,13 @@ class AcousticIndex:
                 break
         if len(unique) < k:
             selected = {item["track_id"] for item in unique}
+            selected_recordings = {_recording_identity(item["title"], item["artist"]) for item in unique}
             for item in sorted(scored, key=lambda value: value["hybrid_score"], reverse=True):
-                if item["track_id"] not in selected:
+                key = _recording_identity(item["title"], item["artist"])
+                if item["track_id"] not in selected and key not in selected_recordings:
                     unique.append(item)
                     selected.add(item["track_id"])
+                    selected_recordings.add(key)
                 if len(unique) >= k:
                     break
         return unique
