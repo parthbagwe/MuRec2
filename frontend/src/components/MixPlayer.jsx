@@ -180,8 +180,8 @@ export default function MixPlayer({ queue, loading, externalPlayingTrackId, onTr
     const animateBlend = () => {
       const now = performance.now();
       const progress = Math.min(1, (now - startedAt) / (seconds * 1000));
-      outgoing.volume = Math.cos(progress * Math.PI / 2);
-      incoming.volume = Math.sin(progress * Math.PI / 2);
+      outgoing.volume = Math.max(0, Math.min(1, Math.cos(progress * Math.PI / 2)));
+      incoming.volume = Math.max(0, Math.min(1, Math.sin(progress * Math.PI / 2)));
       if (progress < 1) return;
       window.clearInterval(animationRef.current);
       outgoing.pause();
