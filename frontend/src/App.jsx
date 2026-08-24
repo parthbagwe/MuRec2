@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
@@ -6,6 +6,7 @@ import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
 import SearchBar from "./components/SearchBar";
 import TrackPreview from "./components/TrackPreview";
+import MixPlayer from "./components/MixPlayer";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -62,6 +63,9 @@ export default function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [indexStatus, setIndexStatus] = useState(null);
+  const [mixQueue, setMixQueue] = useState([]);
+  const [mixLoading, setMixLoading] = useState(false);
+  const recommendationRequest = useRef(0);
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
   const weightLabels = { audio: "rhythm", lyric: "timbre", collab: "harmony" };
@@ -93,14 +97,26 @@ export default function App() {
     setLoading(true);
     setError("");
     setAudioProfile(null);
+    setMixQueue([track]);
+    setMixLoading(true);
+    const requestId = ++recommendationRequest.current;
     try {
-      const response = await getRecommendations(track.track_id, nextMode === "transition" ? 5 : 12, nextWeights, nextMode);
-      setRecommendations(response.data.recommendations);
+      const mixPromise = getRecommendations(track.track_id, 5, nextWeights, "transition");
+      const recommendationPromise = nextMode === "transition"
+        ? mixPromise
+        : getRecommendations(track.track_id, 12, nextWeights, nextMode);
+      const [recommendationResult, mixResult] = await Promise.allSettled([recommendationPromise, mixPromise]);
+      if (requestId !== recommendationRequest.current) return;
+      if (mixResult.status === "fulfilled") setMixQueue([track, ...mixResult.value.data.recommendations.slice(0, 5)]);
+      if (recommendationResult.status === "rejected") throw recommendationResult.reason;
+      setRecommendations(recommendationResult.value.data.recommendations);
       if (user) getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
     } catch (requestError) {
       setRecommendations([]);
       setError(requestError.response?.data?.detail || "The API is unavailable. Run start-backend.cmd and try again.");
-    } finally { setLoading(false); }
+    } finally {
+      if (requestId === recommendationRequest.current) { setLoading(false); setMixLoading(false); }
+    }
   }
 
   async function chooseMode(nextMode) {
@@ -117,6 +133,7 @@ export default function App() {
       const response = await analyzeUnknown(file, title, 12);
       setSelected(response.data.anchor);
       setRecommendations(response.data.recommendations);
+      setMixQueue([response.data.anchor, ...response.data.recommendations.filter((track) => track.preview_url).slice(0, 5)]);
       setAudioProfile(response.data.audio_profile);
       return true;
     } catch (requestError) {
@@ -155,6 +172,10 @@ export default function App() {
     setPlayingTrackId(track?.track_id || null);
     setMoodTrack(track || null);
   }
+  const handleMixTrackChange = useCallback((track) => {
+    setPlayingTrackId(null);
+    setMoodTrack(track || null);
+  }, []);
   function dismissRecommendation(track) {
     setRecommendations((items) => items.filter((item) => item.track_id !== track.track_id));
     if (user) recordEvent(track.track_id, "disliked").catch(() => {});
@@ -259,6 +280,7 @@ export default function App() {
       <footer><span>Cerum · Acoustic scoring with fine-style guardrails · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={(track) => recommend(track)} />
+      <MixPlayer queue={mixQueue} loading={mixLoading} externalPlayingTrackId={playingTrackId} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
     </main>
   );
 }
