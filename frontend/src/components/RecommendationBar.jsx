@@ -50,7 +50,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
   const artwork = rec.artwork_url?.replace("100x100bb", "300x300bb");
 
   return (
-    <motion.article layout initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .45, delay: Math.min(rank * .045, .3) }} className={`recommendation-card ${isPlaying ? "is-playing" : ""} ${rec.score_mode === "acoustic-transition" ? "transition-card" : ""}`}>
+    <motion.article layout initial={{ opacity: 0, x: rank % 2 ? -72 : 72 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .12 }} transition={{ type: "spring", stiffness: 82, damping: 20, delay: Math.min(rank * .035, .24) }} className={`recommendation-card ${isPlaying ? "is-playing" : ""} ${rec.score_mode === "acoustic-transition" ? "transition-card" : ""}`}>
       <div className="card-heading">
         <span className="rank">{rec.transition_step ? `${String(rec.transition_step).padStart(2, "0")} → ${String(rec.transition_step + 1).padStart(2, "0")}` : String(rank).padStart(2, "0")}</span>
         <span className="score">{Math.round(rec.hybrid_score * 100)}% {rec.transition_step ? "flow" : "match"}</span>

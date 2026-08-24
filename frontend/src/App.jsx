@@ -164,6 +164,13 @@ export default function App() {
 
   return (
     <main className={`app-shell mood-${activeMood.id}`}>
+      <motion.div
+        className="mood-color-base"
+        initial={false}
+        animate={{ backgroundColor: activeMood.colors[0] }}
+        transition={{ duration: reducedMotion ? .2 : 3, ease: "linear" }}
+        aria-hidden="true"
+      />
       <AnimatePresence initial={false}>
         <motion.div
           key={activeMood.id}
@@ -172,7 +179,7 @@ export default function App() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: reducedMotion ? 0 : 3, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: reducedMotion ? .2 : 3, ease: "linear" }}
           aria-hidden="true"
         />
       </AnimatePresence>
@@ -187,36 +194,44 @@ export default function App() {
 
       <section className="intro-section" id="top">
         <div className="hero-grid">
-          <motion.div className="hero-copy" initial={{ opacity: 0, y: 36 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7, ease: [0.22, 1, 0.36, 1] }}>
+          <motion.div className="hero-copy" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 86, damping: 20 }}>
             <p className="kicker">01 / Acoustic discovery engine</p>
             <h1>Don’t sort music.<br /><span>Feel its shape.</span></h1>
             <p>Cerum hears rhythm, timbre, texture, dynamics and harmony—then finds the songs that live near the same feeling.</p>
           </motion.div>
-          <div className="hero-mood" aria-live="polite">
+          <motion.aside className="hero-mood" initial={{ opacity: 0, x: 120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 86, damping: 20, delay: .08 }} aria-live="polite">
             <span className="hero-mood-number">{playingTrackId ? "LIVE" : "IDLE"}</span>
-            <div>
-              <small>visual state</small>
-              <strong>{activeMood.name}</strong>
-              <p>{activeMood.meaning}</p>
-            </div>
-          </div>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div key={activeMood.id} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: reducedMotion ? .2 : 1.25, delay: reducedMotion ? 0 : .7 }}>
+                <small>visual state</small>
+                <strong>{activeMood.name}</strong>
+                <p>{activeMood.meaning}</p>
+              </motion.div>
+            </AnimatePresence>
+          </motion.aside>
         </div>
-        <motion.div className="search-stage" initial={{ opacity: 0, scaleX: .96 }} animate={{ opacity: 1, scaleX: 1 }} transition={{ delay: .18, duration: .65 }}>
+        <motion.div className="search-stage" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 92, damping: 22, delay: .18 }}>
           <p className="search-label">Start with one song</p>
           <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
           {indexStatus && <p className="index-status"><span className={indexStatus.building ? "status-dot building" : "status-dot"} />{indexStatus.indexed.toLocaleString()} / {indexStatus.total.toLocaleString()} acoustic fingerprints ready</p>}
         </motion.div>
       </section>
 
+      <div className="kinetic-marquee" aria-hidden="true">
+        <motion.div animate={reducedMotion ? {} : { x: ["0%", "-50%"] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }}>
+          {[0, 1].map((group) => <span key={group}>RHYTHM ↗ TIMBRE ↗ TEXTURE ↗ HARMONY ↗ YOUR NEXT SOUND ↗ </span>)}
+        </motion.div>
+      </div>
+
       <section className="workspace">
-        <div className="mode-section">
+        <motion.div className="mode-section" initial={{ opacity: 0, x: -110 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .18 }} transition={{ type: "spring", stiffness: 78, damping: 20 }}>
           <div className="section-title"><p className="kicker">02 / Recommendation path</p><h2>Choose how<br />to move.</h2></div>
           <div className="mode-selector">
             {MODES.map((item, index) => <motion.button key={item.id} className={mode === item.id ? "active" : ""} onClick={() => chooseMode(item.id)} whileHover={{ y: -4 }} whileTap={{ scale: .98 }}><em>{String(index + 1).padStart(2, "0")}</em><strong>{item.label}{item.id === "personalized" && !user ? " · sign in" : ""}</strong><span>{item.description}</span></motion.button>)}
           </div>
-        </div>
+        </motion.div>
 
-        <div className="controls-card">
+        <motion.div className="controls-card" initial={{ opacity: 0, x: 110 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .18 }} transition={{ type: "spring", stiffness: 78, damping: 20 }}>
           <div className="reference-track">
             <p className="kicker">03 / Current signal</p>
             {selected
@@ -227,7 +242,7 @@ export default function App() {
             {Object.entries(weights).map(([name, value]) => <label key={name}><span>{weightLabels[name]}<strong>{Math.round(value * 100)}%</strong></span><input type="range" min="0" max="1" step="0.05" value={value} disabled={mode !== "similar"} onChange={(event) => updateWeight(name, event.target.value)} /></label>)}
           </div>
           <button className="primary-button" disabled={!selected || loading || Boolean(audioProfile)} onClick={() => recommend(selected)}>{loading ? "Finding matches…" : audioProfile ? "Acoustic analysis" : "Recalculate"}</button>
-        </div>
+        </motion.div>
 
         {mode === "transition" && selected && <div className="transition-explainer"><strong>Your starting song is track 01.</strong><span>Cerum chooses five playable follow-ups in order. Every handoff is scored against the song immediately before it, while the original sound keeps the sequence from drifting.</span></div>}
 
@@ -235,7 +250,7 @@ export default function App() {
         {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Cerum ranks measured sound first, then applies its own microgenre compatibility guardrail—not an Apple or Spotify recommendation score." : "Search the catalogue above. Cerum transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
-        <div className="results-heading"><div><p className="kicker">04 / {mode === "transition" ? "Ordered transition path" : "Ranked suggestions"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} sonic neighbours`) : "Your next sound starts here."}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : `${scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model`}</p>}</div>
+        <motion.div className="results-heading" initial={{ opacity: 0, x: -90 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">04 / {mode === "transition" ? "Ordered transition path" : "Ranked suggestions"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} sonic neighbours`) : "Your next sound starts here."}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : `${scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model`}</p>}</motion.div>
         <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
           {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); recommend(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
         </div>
