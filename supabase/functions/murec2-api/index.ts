@@ -20,6 +20,14 @@ const modeWeights: Record<string, [number, number, number]> = {
   personalized: [0.35, 0.40, 0.25],
   transition: [0.42, 0.25, 0.33],
 };
+const lyricWeights: Record<string, number> = {
+  similar: 0.18,
+  rhythm: 0.05,
+  timbre: 0.08,
+  discover: 0.25,
+  personalized: 0.25,
+  transition: 0.08,
+};
 const allowedEvents = new Set([
   "selected", "preview_started", "preview_completed", "youtube_opened",
   "liked", "disliked", "dismissed",
@@ -62,6 +70,7 @@ class ApiError extends Error {
 
 let libraryCache: JsonRecord[] | null = null;
 let libraryCachedAt = 0;
+const chartCache = new Map<string, { expiresAt: number; rows: JsonRecord[] }>();
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: responseHeaders });
@@ -90,6 +99,9 @@ function cleanTrack(track: JsonRecord, fingerprint?: JsonRecord | null) {
     source: track.source ?? "Catalogue",
     acoustic_signature: signature,
     analysis_status: signature ? "complete" : "pending",
+    lyrics_available: Boolean(fingerprint?.lyrics?.confidence > 0),
+    lyric_themes: fingerprint?.lyrics?.themes ?? [],
+    lyric_language: fingerprint?.lyrics?.language ?? null,
   };
 }
 
@@ -109,6 +121,17 @@ async function loadLibrary() {
     rows.push(...batch);
     if (batch.length < 1000) break;
   }
+  const lyricRows: JsonRecord[] = [];
+  for (let start = 0; ; start += 1000) {
+    const { data, error } = await admin.from("lyric_features")
+      .select("track_id,language,instrumental,themes,theme_vector,sentiment,arousal,confidence")
+      .range(start, start + 999);
+    if (error) throw new ApiError(503, `Could not load lyric features: ${error.message}`);
+    lyricRows.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+  const lyricsByTrack = new Map(lyricRows.map((row) => [String(row.track_id), row]));
+  rows.forEach((row) => { row.lyrics = lyricsByTrack.get(String(row.track_id)) ?? null; });
   libraryCache = rows;
   libraryCachedAt = Date.now();
   return rows;
@@ -191,6 +214,20 @@ function weightedScore(parts: [number, number, number], weights: [number, number
   return weights[0] * parts[0] + weights[1] * parts[1] + weights[2] * parts[2];
 }
 
+function lyricSimilarity(first: JsonRecord, second: JsonRecord) {
+  const left = first.lyrics;
+  const right = second.lyrics;
+  if (!left?.confidence || !right?.confidence || left.instrumental || right.instrumental) return null;
+  const keys = [...new Set([...Object.keys(left.theme_vector ?? {}), ...Object.keys(right.theme_vector ?? {})])];
+  const vectorA = keys.map((key) => Number(left.theme_vector?.[key] ?? 0));
+  const vectorB = keys.map((key) => Number(right.theme_vector?.[key] ?? 0));
+  const theme = keys.length ? Math.max(0, cosine(vectorA, vectorB)) : 0;
+  const sentiment = 1 - Math.min(1, Math.abs(Number(left.sentiment ?? 0) - Number(right.sentiment ?? 0)) / 2);
+  const arousal = 1 - Math.min(1, Math.abs(Number(left.arousal ?? 0.5) - Number(right.arousal ?? 0.5)));
+  const language = left.language && left.language === right.language ? 1 : 0.65;
+  return Math.max(0, Math.min(1, 0.55 * theme + 0.20 * sentiment + 0.15 * arousal + 0.10 * language));
+}
+
 function matchReasons(anchor: JsonRecord, candidate: JsonRecord, parts: [number, number, number]) {
   const reasons: string[] = [];
   const a = anchor.profile;
@@ -247,18 +284,23 @@ function transitionMetrics(previous: JsonRecord, candidate: JsonRecord, anchor: 
   );
   const currentStyle = styleSimilarity(previous.track.provider_subgenre, candidate.track.provider_subgenre);
   const anchorStyle = styleSimilarity(anchor.track.provider_subgenre, candidate.track.provider_subgenre);
-  const base = 0.36 * tempo + 0.30 * harmony + 0.20 * timbre + 0.14 * energy;
+  const lyrics = lyricSimilarity(previous, candidate);
+  const base = lyrics === null
+    ? 0.36 * tempo + 0.30 * harmony + 0.20 * timbre + 0.14 * energy
+    : 0.34 * tempo + 0.28 * harmony + 0.18 * timbre + 0.12 * energy + 0.08 * lyrics;
   const score = base * (0.78 + 0.22 * currentStyle) * (0.90 + 0.10 * anchorStyle);
   const reasons: string[] = [];
   if (tempoDifference <= 5) reasons.push(`${Math.round(previousProfile.bpm)}→${Math.round(candidateProfile.bpm)} BPM`);
   if (key >= 0.90) reasons.push(`${previousProfile.key} ${previousProfile.mode}→${candidateProfile.key} ${candidateProfile.mode}`);
   if (energy >= 0.88) reasons.push("steady energy handoff");
   if (timbre >= 0.86) reasons.push("matched texture");
+  if (lyrics !== null && lyrics >= 0.82) reasons.push("lyrical mood continuity");
   if (!reasons.length) reasons.push("balanced tempo and tone");
   return {
     parts: [tempo, timbre, harmony] as [number, number, number],
     score: Math.max(0, Math.min(1, score)),
     reasons: reasons.slice(0, 3),
+    lyrics,
     note: `${Math.round(previousProfile.bpm)}→${Math.round(candidateProfile.bpm)} BPM · ${previousProfile.key} ${previousProfile.mode}→${candidateProfile.key} ${candidateProfile.mode}`,
   };
 }
@@ -308,23 +350,18 @@ async function searchTracks(input: JsonRecord) {
     rows = data ?? [];
     total = count ?? rows.length;
   } else {
-    const terms = [...new Set([q, ...q.split(/\s+/).filter((term) => term.length > 1)])].slice(0, 7);
-    const batches = await Promise.all(terms.map((term) => admin.from("tracks").select(selection)
-      .or(`title.ilike.%${term}%,artist.ilike.%${term}%`).limit(120)));
-    const failure = batches.find(({ error }) => error)?.error;
-    if (failure) throw new ApiError(503, failure.message);
-    const merged = new Map<string, JsonRecord>();
-    for (const batch of batches) for (const row of batch.data ?? []) merged.set(String(row.track_id), row);
-    const queryTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
-    rows = [...merged.values()].map((row) => {
-      const title = String(row.title).toLowerCase();
-      const artist = String(row.artist).toLowerCase();
-      const haystack = `${title} ${artist}`;
-      const coverage = queryTerms.filter((term) => haystack.includes(term)).length / Math.max(queryTerms.length, 1);
-      const exactBoost = title === q.toLowerCase() ? 3 : artist === q.toLowerCase() ? 2.5 : title.startsWith(q.toLowerCase()) ? 2 : haystack.includes(q.toLowerCase()) ? 1 : 0;
-      return { ...row, _searchScore: coverage * 10 + exactBoost };
-    }).filter((row) => row._searchScore >= 10)
-      .sort((left, right) => right._searchScore - left._searchScore || String(left.title).localeCompare(String(right.title)));
+    const { data: ranked, error: rankError } = await admin.rpc("search_tracks_fuzzy", {
+      search_query: q,
+      result_limit: Math.min(200, page * pageSize + 40),
+    });
+    if (rankError) throw new ApiError(503, rankError.message);
+    const ids = (ranked ?? []).map((row: JsonRecord) => String(row.track_id));
+    if (ids.length) {
+      const { data, error } = await admin.from("tracks").select(selection).in("track_id", ids);
+      if (error) throw new ApiError(503, error.message);
+      const byId = new Map((data ?? []).map((row: JsonRecord) => [String(row.track_id), row]));
+      rows = ids.map((id: string) => byId.get(id)).filter(Boolean) as JsonRecord[];
+    }
     total = rows.length;
     rows = rows.slice((page - 1) * pageSize, page * pageSize);
   }
@@ -333,6 +370,59 @@ async function searchTracks(input: JsonRecord) {
     return cleanTrack(row, fingerprint);
   });
   return { results, total, page, page_size: pageSize };
+}
+
+async function chartTracks(input: JsonRecord) {
+  const country = String(input.country ?? "us").toLowerCase() === "in" ? "in" : "us";
+  const cached = chartCache.get(country);
+  if (cached && cached.expiresAt > Date.now()) return { country, updated_at: new Date(cached.expiresAt - 30 * 60_000).toISOString(), tracks: cached.rows };
+  const feedResponse = await fetch(`https://rss.marketingtools.apple.com/api/v2/${country}/music/most-played/50/songs.json`, { signal: AbortSignal.timeout(8_000) });
+  if (!feedResponse.ok) throw new ApiError(503, "The country chart is temporarily unavailable");
+  const feed = await feedResponse.json();
+  const results = Array.isArray(feed?.feed?.results) ? feed.feed.results : [];
+  const ids = results.map((item: JsonRecord) => String(item.id)).filter(Boolean);
+  let lookupById = new Map<string, JsonRecord>();
+  if (ids.length) {
+    const lookupResponse = await fetch(`https://itunes.apple.com/lookup?id=${ids.join(",")}&country=${country}&entity=song`, { signal: AbortSignal.timeout(8_000) }).catch(() => null);
+    if (lookupResponse?.ok) {
+      const lookup = await lookupResponse.json();
+      lookupById = new Map((lookup.results ?? []).map((item: JsonRecord) => [String(item.trackId), item]));
+    }
+  }
+  const { data: matches, error: matchError } = await admin.rpc("match_chart_tracks", {
+    chart_items: results.map((item: JsonRecord) => ({ id: String(item.id), title: item.name, artist: item.artistName })),
+  });
+  if (matchError) throw new ApiError(503, `Could not match the country chart: ${matchError.message}`);
+  const catalogByChartId = new Map((matches ?? []).map((row: JsonRecord) => [String(row.chart_id), row]));
+  const tracks = results.map((item: JsonRecord, index: number) => {
+    const lookup = lookupById.get(String(item.id));
+    const catalog = catalogByChartId.get(String(item.id));
+    const base = catalog ? cleanTrack(catalog.track_row, catalog.fingerprint_row) : {
+      track_id: `chart-${country}-${item.id}`,
+      title: item.name,
+      artist: item.artistName,
+      album: item.collectionName ?? null,
+      artwork_url: item.artworkUrl100,
+      preview_url: lookup?.previewUrl ?? null,
+      external_url: item.url,
+      source: "Country chart",
+      bpm: null,
+      acoustic_signature: null,
+      lyrics_available: false,
+    };
+    return {
+      ...base,
+      title: item.name,
+      artist: item.artistName,
+      artwork_url: String(item.artworkUrl100 ?? base.artwork_url ?? "").replace("100x100", "600x600"),
+      preview_url: base.preview_url ?? lookup?.previewUrl ?? null,
+      chart_rank: index + 1,
+      chart_country: country,
+      catalogued: Boolean(catalog),
+    };
+  });
+  chartCache.set(country, { expiresAt: Date.now() + 30 * 60_000, rows: tracks });
+  return { country, updated_at: feed?.feed?.updated ?? new Date().toISOString(), tracks };
 }
 
 async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof userContext>>) {
@@ -401,7 +491,8 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
       chain.push({
         ...cleanTrack(next.candidate.track, next.candidate),
         audio_similarity: Number(next.metrics.parts[0].toFixed(4)),
-        lyric_similarity: Number(next.metrics.parts[1].toFixed(4)),
+        timbre_similarity: Number(next.metrics.parts[1].toFixed(4)),
+        lyric_similarity: next.metrics.lyrics === null ? null : Number(next.metrics.lyrics.toFixed(4)),
         collab_similarity: Number(next.metrics.parts[2].toFixed(4)),
         hybrid_score: Number(next.score.toFixed(4)),
         score_mode: "acoustic-transition",
@@ -431,7 +522,12 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
       ] as [number, number, number];
     }
     const [rhythm, timbre, harmony] = parts;
-    const base = weightedScore(parts, chosenWeights);
+    const acousticScore = weightedScore(parts, chosenWeights);
+    const lyrics = lyricSimilarity(anchor, candidate);
+    const lyricWeight = lyricWeights[mode];
+    const base = lyrics === null
+      ? acousticScore
+      : (1 - lyricWeight) * acousticScore + lyricWeight * lyrics;
     const style = styleSimilarity(anchor.track.provider_subgenre, candidate.track.provider_subgenre);
     let total = base * (0.52 + 0.48 * style);
     if (mode === "discover" && normalizedStyle(candidate.track.artist) === normalizedStyle(anchor.track.artist)) total *= 0.72;
@@ -443,11 +539,14 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
     return [{
       ...cleanTrack(candidate.track, candidate),
       audio_similarity: Number(rhythm.toFixed(4)),
-      lyric_similarity: Number(timbre.toFixed(4)),
+      timbre_similarity: Number(timbre.toFixed(4)),
+      lyric_similarity: lyrics === null ? null : Number(lyrics.toFixed(4)),
       collab_similarity: Number(harmony.toFixed(4)),
       hybrid_score: Number(Math.max(0, Math.min(1, total)).toFixed(4)),
       score_mode: `acoustic-fingerprint-${mode}`,
-      match_reasons: matchReasons(anchor, candidate, parts),
+      match_reasons: lyrics !== null && lyrics >= 0.82
+        ? [...matchReasons(anchor, candidate, parts), "related lyrical themes"].slice(0, 3)
+        : matchReasons(anchor, candidate, parts),
     }];
     }).sort((a, b) => b.hybrid_score - a.hybrid_score);
 
@@ -479,7 +578,7 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   }
 
   if (context) {
-    const weights = { audio: chosenWeights[0], lyric: chosenWeights[1], collab: chosenWeights[2] };
+    const weights = { rhythm: chosenWeights[0], timbre: chosenWeights[1], harmony: chosenWeights[2], lyrics: lyricWeights[mode] };
     const { data: run, error } = await context.client.from("recommendation_runs").insert({
       user_id: context.user.id,
       anchor_track_id: String(anchor.track_id),
@@ -504,7 +603,7 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   return {
     anchor: cleanTrack(anchor.track, anchor),
     recommendations,
-    weights_used: { audio: chosenWeights[0], lyric: chosenWeights[1], collab: chosenWeights[2] },
+    weights_used: { rhythm: chosenWeights[0], timbre: chosenWeights[1], harmony: chosenWeights[2], lyrics: lyricWeights[mode] },
     total: recommendations.length,
   };
 }
@@ -534,22 +633,35 @@ async function handleAction(input: JsonRecord, request: Request) {
   const action = String(input.action ?? "");
   const context = await userContext(request);
   if (action === "health") {
-    const [{ count: tracks }, library] = await Promise.all([
+    const [{ count: tracks }, { count: indexed }] = await Promise.all([
       admin.from("tracks").select("track_id", { count: "exact" }).limit(1),
-      loadLibrary(),
+      admin.from("acoustic_fingerprints").select("track_id", { count: "exact", head: true }),
     ]);
-    return { status: "ok", models_loaded: true, total_tracks: tracks ?? library.length, acoustic_indexed: library.length, acoustic_indexing: false };
+    return { status: "ok", models_loaded: true, total_tracks: tracks ?? indexed ?? 0, acoustic_indexed: indexed ?? 0, acoustic_indexing: false };
   }
   if (action === "acousticStatus") {
-    const [{ count: tracks }, { count: failures }, library] = await Promise.all([
+    const [{ count: tracks }, { count: failures }, { count: indexed }] = await Promise.all([
       admin.from("tracks").select("track_id", { count: "exact" }).limit(1),
       admin.from("fingerprint_failures").select("track_id", { count: "exact" }).limit(1),
-      loadLibrary(),
+      admin.from("acoustic_fingerprints").select("track_id", { count: "exact", head: true }),
     ]);
-    const total = tracks ?? library.length;
-    return { indexed: library.length, total, remaining: Math.max(0, total - library.length), failures: failures ?? 0, building: false };
+    const total = tracks ?? indexed ?? 0;
+    return { indexed: indexed ?? 0, total, remaining: Math.max(0, total - (indexed ?? 0)), failures: failures ?? 0, building: false };
   }
   if (action === "tracks") return searchTracks(input);
+  if (action === "charts") return chartTracks(input);
+  if (action === "lyricStatus") {
+    const [{ count: analyzed }, { count: total }] = await Promise.all([
+      admin.from("lyric_features").select("track_id", { count: "exact", head: true }),
+      admin.from("acoustic_fingerprints").select("track_id", { count: "exact", head: true }),
+    ]);
+    return {
+      analyzed: analyzed ?? 0,
+      total: total ?? 0,
+      provider_configured: Boolean(Deno.env.get("MUSIXMATCH_API_KEY")),
+      stores_raw_lyrics: false,
+    };
+  }
   if (action === "track") {
     const library = await loadLibrary();
     const row = library.find((item) => String(item.track_id) === String(input.track_id));
@@ -561,7 +673,7 @@ async function handleAction(input: JsonRecord, request: Request) {
     return {
       genres: [...new Set(library.map((row) => row.profile.texture).filter(Boolean))].sort(),
       subgenres: [...new Set(library.map((row) => row.acoustic_signature).filter(Boolean))].sort(),
-      dimensions: ["tempo", "intensity", "texture", "rhythm character", "harmonic character"],
+      dimensions: ["tempo", "intensity", "texture", "rhythm character", "harmonic character", "lyrical themes"],
     };
   }
   if (action === "recommend" || action === "similar") return recommend({ ...input, mode: action === "similar" ? "similar" : input.mode }, context);

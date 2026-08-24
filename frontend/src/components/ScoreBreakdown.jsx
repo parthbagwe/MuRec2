@@ -1,4 +1,5 @@
 function Bar({ label, value, color }) {
+  if (!Number.isFinite(value)) return null;
   return (
     <div className="score-row">
       <span>{label}</span>
@@ -31,8 +32,9 @@ export default function ScoreBreakdown({ rec }) {
   return (
     <div className="score-breakdown">
       <Bar label={labels[0]} value={rec.audio_similarity} color="#f0ff37" />
-      <Bar label={labels[1]} value={rec.lyric_similarity} color="#ff5aa5" />
+      <Bar label={labels[1]} value={rec.timbre_similarity ?? rec.lyric_similarity} color="#ff5aa5" />
       <Bar label={labels[2]} value={rec.collab_similarity} color="#6c57ff" />
+      {Number.isFinite(rec.timbre_similarity) && Number.isFinite(rec.lyric_similarity) && <Bar label="lyrics" value={rec.lyric_similarity} color="#ff914d" />}
     </div>
   );
 }

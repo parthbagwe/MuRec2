@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
+import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getLyricStatus, getMe, getRecommendations, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
 import SearchBar from "./components/SearchBar";
 import TrackPreview from "./components/TrackPreview";
 import MixPlayer from "./components/MixPlayer";
+import ChartsPanel from "./components/ChartsPanel";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -63,8 +64,10 @@ export default function App() {
   const [authOpen, setAuthOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [indexStatus, setIndexStatus] = useState(null);
+  const [lyricStatus, setLyricStatus] = useState(null);
   const [mixQueue, setMixQueue] = useState([]);
   const [mixLoading, setMixLoading] = useState(false);
+  const [autoPlayToken, setAutoPlayToken] = useState(0);
   const recommendationRequest = useRef(0);
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
@@ -72,9 +75,10 @@ export default function App() {
   const activeMood = useMemo(() => moodForTrack(moodTrack), [moodTrack]);
 
   useEffect(() => {
-    getMe().then((response) => { setUser(response.data.user); refreshLibrary(); }).catch(() => {});
+    getMe().then((response) => { setUser(response.data.user); if (response.data.user) refreshLibrary(); }).catch(() => {});
     const updateIndexStatus = () => getAcousticStatus().then((response) => setIndexStatus(response.data)).catch(() => {});
     updateIndexStatus();
+    getLyricStatus().then((response) => setLyricStatus(response.data)).catch(() => {});
     const timer = window.setInterval(updateIndexStatus, 10000);
     return () => window.clearInterval(timer);
   }, []);
@@ -98,6 +102,7 @@ export default function App() {
     setError("");
     setAudioProfile(null);
     setMixQueue([track]);
+    setAutoPlayToken((token) => token + 1);
     setMixLoading(true);
     const requestId = ++recommendationRequest.current;
     try {
@@ -134,6 +139,7 @@ export default function App() {
       setSelected(response.data.anchor);
       setRecommendations(response.data.recommendations);
       setMixQueue([response.data.anchor, ...response.data.recommendations.filter((track) => track.preview_url).slice(0, 5)]);
+      setAutoPlayToken((token) => token + 1);
       setAudioProfile(response.data.audio_profile);
       return true;
     } catch (requestError) {
@@ -220,21 +226,12 @@ export default function App() {
             <h1>Don’t sort music.<br /><span>Feel its shape.</span></h1>
             <p>Cerum hears rhythm, timbre, texture, dynamics and harmony—then finds the songs that live near the same feeling.</p>
           </motion.div>
-          <motion.aside className="hero-mood" initial={{ opacity: 0, x: 120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 86, damping: 20, delay: .08 }} aria-live="polite">
-            <span className="hero-mood-number">{playingTrackId ? "LIVE" : "IDLE"}</span>
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div key={activeMood.id} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: reducedMotion ? .2 : 1.25, delay: reducedMotion ? 0 : .7 }}>
-                <small>visual state</small>
-                <strong>{activeMood.name}</strong>
-                <p>{activeMood.meaning}</p>
-              </motion.div>
-            </AnimatePresence>
-          </motion.aside>
+          <ChartsPanel onSelect={recommend} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} />
         </div>
         <motion.div className="search-stage" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 92, damping: 22, delay: .18 }}>
           <p className="search-label">Start with one song</p>
           <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
-          {indexStatus && <p className="index-status"><span className={indexStatus.building ? "status-dot building" : "status-dot"} />{indexStatus.indexed.toLocaleString()} / {indexStatus.total.toLocaleString()} acoustic fingerprints ready</p>}
+          {indexStatus && <p className="index-status"><span className={indexStatus.building ? "status-dot building" : "status-dot"} />{indexStatus.indexed.toLocaleString()} / {indexStatus.total.toLocaleString()} acoustic fingerprints ready{lyricStatus ? ` · ${lyricStatus.analyzed.toLocaleString()} licensed lyric maps ready` : ""}</p>}
         </motion.div>
       </section>
 
@@ -280,7 +277,7 @@ export default function App() {
       <footer><span>Cerum · Acoustic scoring with fine-style guardrails · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={(track) => recommend(track)} />
-      <MixPlayer queue={mixQueue} loading={mixLoading} externalPlayingTrackId={playingTrackId} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
+      <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
     </main>
   );
 }

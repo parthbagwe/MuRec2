@@ -57,6 +57,14 @@ export const getGenres = () => hostedApiEnabled ? edge("genres") : api.get("/gen
 
 export const getAcousticStatus = () => hostedApiEnabled ? edge("acousticStatus") : api.get("/acoustic-index/status");
 
+export const getCharts = (country = "us") => hostedApiEnabled
+  ? edge("charts", { country })
+  : Promise.reject(requestError("Country charts are available on the hosted Cerum service."));
+
+export const getLyricStatus = () => hostedApiEnabled
+  ? edge("lyricStatus")
+  : Promise.resolve({ data: { analyzed: 0, total: 0, provider_configured: false, stores_raw_lyrics: false } });
+
 export const analyzeUnknown = (file, title, k = 12) => {
   if (hostedApiEnabled) return Promise.reject(requestError("Audio-file analysis is available in the local Cerum desktop version. Search the hosted acoustic catalogue instead."));
   const form = new FormData();

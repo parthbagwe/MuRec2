@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+
+const FullscreenVisualizer = lazy(() => import("./FullscreenVisualizer"));
 
 function PlayIcon({ playing }) {
   return playing
@@ -32,7 +34,7 @@ function compatiblePlaybackRate(currentTrack, nextTrack) {
   return Math.abs(ratio - 1) <= 0.045 ? ratio : 1;
 }
 
-export default function MixPlayer({ queue, loading, externalPlayingTrackId, onTrackChange, onInteraction }) {
+export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayingTrackId, palette, onTrackChange, onInteraction }) {
   const audioRefs = useRef([]);
   const animationRef = useRef(null);
   const crossfadingRef = useRef(false);
@@ -44,7 +46,9 @@ export default function MixPlayer({ queue, loading, externalPlayingTrackId, onTr
   const [queueOpen, setQueueOpen] = useState(false);
   const [crossfading, setCrossfading] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
-  const queueKey = useMemo(() => queue.map((track) => track.track_id).join("|"), [queue]);
+  const [visualizerOpen, setVisualizerOpen] = useState(false);
+  const lastAutoPlayToken = useRef(0);
+  const anchorKey = queue[0]?.track_id || "";
   const activeTrack = queue[activeIndex] || queue[0];
   const nextTrack = queue.slice(activeIndex + 1).find((track) => track.preview_url);
   const nextBlend = blendLength(nextTrack);
@@ -71,7 +75,18 @@ export default function MixPlayer({ queue, loading, externalPlayingTrackId, onTr
     setCrossfading(false);
     setPlaybackError("");
     onTrackChange(null);
-  }, [queueKey, onTrackChange]);
+  }, [anchorKey, onTrackChange]);
+
+  useEffect(() => {
+    if (!anchorKey || !autoPlayToken || autoPlayToken === lastAutoPlayToken.current) return undefined;
+    lastAutoPlayToken.current = autoPlayToken;
+    const audio = audioRefs.current[0];
+    if (!audio) return undefined;
+    const begin = () => startAt(0);
+    if (audio.readyState >= 1) begin();
+    else audio.addEventListener("loadedmetadata", begin, { once: true });
+    return () => audio.removeEventListener("loadedmetadata", begin);
+  }, [anchorKey, autoPlayToken]);
 
   useEffect(() => {
     if (!externalPlayingTrackId || !isPlaying) return;
@@ -200,7 +215,7 @@ export default function MixPlayer({ queue, loading, externalPlayingTrackId, onTr
       onInteraction(queue[toIndex], "preview_started");
     };
     animateBlend();
-    animationRef.current = window.setInterval(animateBlend, 50);
+    animationRef.current = window.setInterval(animateBlend, 25);
   }
 
   function handleTimeUpdate(index) {
@@ -250,6 +265,7 @@ export default function MixPlayer({ queue, loading, externalPlayingTrackId, onTr
   return (
     <motion.aside className={`mix-player ${queueOpen ? "queue-open" : ""}`} initial={{ y: 140 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 24 }} aria-label="Cerum AutoMix player">
       <AnimatePresence>
+        {visualizerOpen && <Suspense fallback={null}><FullscreenVisualizer track={activeTrack} nextTrack={nextTrack} isPlaying={isPlaying} crossfading={crossfading} currentTime={currentTime} palette={palette} onClose={() => setVisualizerOpen(false)} /></Suspense>}
         {queueOpen && (
           <motion.div className="mix-queue" initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 28 }} transition={{ duration: .22 }}>
             <div className="mix-queue-heading"><div><small>Acoustic AutoMix</small><strong>{loading ? "Building the next five…" : `${playableFollowups} transitions ready`}</strong></div><button onClick={() => setQueueOpen(false)} aria-label="Close queue">×</button></div>
@@ -284,12 +300,13 @@ export default function MixPlayer({ queue, loading, externalPlayingTrackId, onTr
         </div>
         <div className="mix-actions">
           <span className="blend-status">{crossfading ? "equal-power blend live" : nextTrack ? `${nextBlend.toFixed(1)}s adaptive blend` : "end of queue"}</span>
+          <button className="visuals-button" onClick={() => setVisualizerOpen(true)}>Visuals ↗</button>
           <a href={youtubeSearchUrl(activeTrack)} target="_blank" rel="noreferrer" onClick={() => onInteraction(activeTrack, "youtube_opened")}>YouTube ↗</a>
           <button className="queue-button" onClick={() => setQueueOpen((open) => !open)} aria-expanded={queueOpen}><span>Up next</span><strong>{loading ? "…" : playableFollowups}</strong></button>
         </div>
       </div>
       {playbackError && <p className="mix-error" role="alert">{playbackError}</p>}
-      {queue.map((track, index) => track.preview_url && <audio key={`${track.track_id}-audio`} ref={(node) => { audioRefs.current[index] = node; }} src={track.preview_url} preload={index <= activeIndex + 1 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(event.currentTarget.duration); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} />)}
+      {queue.map((track, index) => track.preview_url && <audio key={`${track.track_id}-audio`} ref={(node) => { audioRefs.current[index] = node; }} src={track.preview_url} preload={index <= activeIndex + 2 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(event.currentTarget.duration); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} />)}
     </motion.aside>
   );
 }
