@@ -221,7 +221,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     return queueRef.current.findIndex((track, index) => index > fromIndex && Boolean(track.preview_url));
   }
 
-  async function startAt(index, shouldPlay = true) {
+  async function startAt(index, shouldPlay = true, advanceOnFailure = false) {
     const track = queueRef.current[index];
     const audio = audioRefs.current[index];
     if (!track?.preview_url || !audio) {
@@ -247,18 +247,31 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     if (!shouldPlay) return;
     audio.volume = 1;
     audio.playbackRate = 1;
-    try {
-      await audio.play();
+    let started = false;
+    for (let attempt = 0; attempt < 2 && !started; attempt += 1) {
+      try {
+        await audio.play();
+        started = true;
+      } catch {
+        if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 180));
+      }
+    }
+    if (started) {
       isPlayingRef.current = true;
       setIsPlaying(true);
       onTrackChange(track);
       onInteraction(track, "preview_started");
-    } catch {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-      onTrackChange(null);
-      setPlaybackError("This preview could not start. Try YouTube for the full song.");
+      return true;
     }
+    if (advanceOnFailure) {
+      const nextIndex = nextPlayableIndex(index);
+      if (nextIndex >= 0) return startAt(nextIndex, true, true);
+    }
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    onTrackChange(null);
+    setPlaybackError("This preview could not start. Try YouTube for the full song.");
+    return false;
   }
 
   function stopPlayback(reset = false) {
@@ -377,12 +390,20 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   function handleEnded(index) {
     if (index !== activeIndexRef.current) return;
     if (crossfadingRef.current) {
-      finishBlendRef.current?.();
+      if (finishBlendRef.current) finishBlendRef.current();
+      else {
+        crossfadingRef.current = false;
+        setCrossfading(false);
+        onInteraction(queueRef.current[index], "preview_completed");
+        const nextIndex = nextPlayableIndex(index);
+        if (nextIndex >= 0) startAt(nextIndex, true, true);
+        else stopPlayback(true);
+      }
       return;
     }
     onInteraction(queueRef.current[index], "preview_completed");
     const nextIndex = nextPlayableIndex(index);
-    if (nextIndex >= 0) startAt(nextIndex);
+    if (nextIndex >= 0) startAt(nextIndex, true, true);
     else stopPlayback(true);
   }
 
