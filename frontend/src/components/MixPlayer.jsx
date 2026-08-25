@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { analyzePreview, buildTransitionPlan } from "../audio/transitionAnalyzer";
 import FullscreenVisualizer from "./FullscreenVisualizer";
 
 function PlayIcon({ playing }) {
@@ -16,6 +17,10 @@ function formatTime(value) {
 
 function youtubeSearchUrl(track) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${track.title} ${track.artist} official audio`)}`;
+}
+
+function transitionKey(currentTrack, nextTrack) {
+  return `${currentTrack?.track_id || currentTrack?.preview_url || "current"}→${nextTrack?.track_id || nextTrack?.preview_url || "next"}`;
 }
 
 function transitionTempoDifference(currentTrack, nextTrack) {
@@ -60,8 +65,10 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const audioRefs = useRef([]);
   const animationRef = useRef(null);
   const rateAnimationRef = useRef(null);
+  const volumeAnimationRef = useRef(null);
   const blendFallbackRef = useRef(null);
   const finishBlendRef = useRef(null);
+  const transitionPlansRef = useRef(new Map());
   const crossfadingRef = useRef(false);
   const activeIndexRef = useRef(0);
   const isPlayingRef = useRef(false);
@@ -72,6 +79,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const [duration, setDuration] = useState(0);
   const [queueOpen, setQueueOpen] = useState(false);
   const [crossfading, setCrossfading] = useState(false);
+  const [mixPlanStatus, setMixPlanStatus] = useState("idle");
   const [playbackError, setPlaybackError] = useState("");
   const [visualizerOpen, setVisualizerOpen] = useState(false);
   const lastAutoPlayToken = useRef(0);
@@ -91,6 +99,11 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   function clearRateAutomation() {
     cancelAnimationFrame(rateAnimationRef.current);
     rateAnimationRef.current = null;
+  }
+
+  function clearVolumeAutomation() {
+    cancelAnimationFrame(volumeAnimationRef.current);
+    volumeAnimationRef.current = null;
   }
 
   function settlePlaybackRate(audio, startingRate) {
@@ -116,6 +129,29 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     rateAnimationRef.current = requestAnimationFrame(animateRate);
   }
 
+  function settleVolume(audio, startingVolume) {
+    clearVolumeAutomation();
+    if (!audio || Math.abs(startingVolume - 1) < 0.01) {
+      if (audio) audio.volume = 1;
+      return;
+    }
+    const startedAt = performance.now();
+    const durationMs = 4200;
+    const animateVolume = () => {
+      if (audio.paused || audio.ended) {
+        audio.volume = 1;
+        volumeAnimationRef.current = null;
+        return;
+      }
+      const progress = Math.min(1, (performance.now() - startedAt) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      audio.volume = startingVolume + (1 - startingVolume) * eased;
+      if (progress < 1) volumeAnimationRef.current = requestAnimationFrame(animateVolume);
+      else volumeAnimationRef.current = null;
+    };
+    volumeAnimationRef.current = requestAnimationFrame(animateVolume);
+  }
+
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
@@ -129,9 +165,38 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, [queue]);
 
   useEffect(() => {
+    const fromTrack = queue[activeIndex];
+    const toIndex = queue.findIndex((track, index) => index > activeIndex && Boolean(track.preview_url));
+    const toTrack = queue[toIndex];
+    if (!fromTrack?.preview_url || !toTrack?.preview_url) {
+      setMixPlanStatus("idle");
+      return undefined;
+    }
+    const key = transitionKey(fromTrack, toTrack);
+    if (transitionPlansRef.current.has(key)) {
+      setMixPlanStatus("ready");
+      return undefined;
+    }
+    let cancelled = false;
+    setMixPlanStatus("analyzing");
+    Promise.all([analyzePreview(fromTrack.preview_url), analyzePreview(toTrack.preview_url)])
+      .then(([outgoingProfile, incomingProfile]) => {
+        const plan = buildTransitionPlan(outgoingProfile, incomingProfile, fromTrack, toTrack);
+        transitionPlansRef.current.set(key, plan);
+        if (!cancelled) setMixPlanStatus("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setMixPlanStatus("fallback");
+      });
+    return () => { cancelled = true; };
+  }, [activeIndex, queue]);
+
+  useEffect(() => {
     clearBlendCompletion();
     clearRateAutomation();
+    clearVolumeAutomation();
     crossfadingRef.current = false;
+    transitionPlansRef.current.clear();
     audioRefs.current.forEach((audio) => {
       if (!audio) return;
       audio.pause();
@@ -205,6 +270,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     if (!externalPlayingTrackId || !isPlaying) return;
     clearBlendCompletion();
     clearRateAutomation();
+    clearVolumeAutomation();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => audio?.pause());
     setIsPlaying(false);
@@ -214,11 +280,16 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   useEffect(() => () => {
     clearBlendCompletion();
     clearRateAutomation();
+    clearVolumeAutomation();
     audioRefs.current.forEach((audio) => audio?.pause());
   }, []);
 
   function nextPlayableIndex(fromIndex) {
     return queueRef.current.findIndex((track, index) => index > fromIndex && Boolean(track.preview_url));
+  }
+
+  function transitionPlanFor(fromIndex, toIndex) {
+    return transitionPlansRef.current.get(transitionKey(queueRef.current[fromIndex], queueRef.current[toIndex])) || null;
   }
 
   async function startAt(index, shouldPlay = true, advanceOnFailure = false) {
@@ -230,6 +301,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     }
     clearBlendCompletion();
     clearRateAutomation();
+    clearVolumeAutomation();
     crossfadingRef.current = false;
     audioRefs.current.forEach((item, itemIndex) => {
       if (!item || itemIndex === index) return;
@@ -277,6 +349,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   function stopPlayback(reset = false) {
     clearBlendCompletion();
     clearRateAutomation();
+    clearVolumeAutomation();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => {
       if (!audio) return;
@@ -314,10 +387,13 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     crossfadingRef.current = true;
     setCrossfading(true);
     const currentQueue = queueRef.current;
-    const seconds = blendLength(currentQueue[fromIndex], currentQueue[toIndex]);
-    const matchedRate = tempoMatchRate(currentQueue[fromIndex], currentQueue[toIndex]);
-    const beatDelay = beatAlignmentDelay(outgoing, currentQueue[fromIndex], currentQueue[toIndex]);
-    incoming.currentTime = 0;
+    const plan = transitionPlanFor(fromIndex, toIndex);
+    const seconds = plan?.duration || blendLength(currentQueue[fromIndex], currentQueue[toIndex]);
+    const matchedRate = plan?.playbackRate || tempoMatchRate(currentQueue[fromIndex], currentQueue[toIndex]);
+    const incomingGain = plan?.incomingGain || 1;
+    const beatDelay = plan ? 0 : beatAlignmentDelay(outgoing, currentQueue[fromIndex], currentQueue[toIndex]);
+    const lateness = plan ? Math.max(0, outgoing.currentTime - plan.outgoingStart) : 0;
+    incoming.currentTime = plan ? Math.max(0, plan.incomingStart + lateness * matchedRate) : 0;
     incoming.volume = 0;
     incoming.playbackRate = matchedRate;
     incoming.preservesPitch = true;
@@ -344,8 +420,9 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       outgoing.pause();
       outgoing.currentTime = 0;
       outgoing.volume = 1;
-      incoming.volume = 1;
+      incoming.volume = incomingGain;
       settlePlaybackRate(incoming, matchedRate);
+      settleVolume(incoming, incomingGain);
       activeIndexRef.current = toIndex;
       setActiveIndex(toIndex);
       setCurrentTime(incoming.currentTime);
@@ -366,7 +443,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       const now = performance.now();
       const progress = Math.min(1, (now - startedAt) / (seconds * 1000));
       outgoing.volume = Math.max(0, Math.min(1, Math.cos(progress * Math.PI / 2)));
-      incoming.volume = Math.max(0, Math.min(1, Math.sin(progress * Math.PI / 2)));
+      incoming.volume = Math.max(0, Math.min(1, Math.sin(progress * Math.PI / 2) * incomingGain));
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animateBlend);
         return;
@@ -384,8 +461,24 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     setDuration(audio.duration || 0);
     const remaining = audio.duration - audio.currentTime;
     const nextIndex = nextPlayableIndex(index);
-    if (isPlayingRef.current && nextIndex >= 0 && remaining > 0 && remaining <= blendLength(queueRef.current[index], queueRef.current[nextIndex]) + 0.7) beginCrossfade(index);
+    const plan = nextIndex >= 0 ? transitionPlanFor(index, nextIndex) : null;
+    const reachedAnalyzedBoundary = plan && audio.currentTime >= plan.outgoingStart;
+    const reachedFallbackBoundary = !plan && remaining > 0 && remaining <= blendLength(queueRef.current[index], queueRef.current[nextIndex]) + 0.7;
+    if (isPlayingRef.current && nextIndex >= 0 && (reachedAnalyzedBoundary || reachedFallbackBoundary)) beginCrossfade(index);
   }
+
+  useEffect(() => {
+    if (!isPlaying) return undefined;
+    const timer = window.setInterval(() => {
+      const fromIndex = activeIndexRef.current;
+      const toIndex = nextPlayableIndex(fromIndex);
+      const audio = audioRefs.current[fromIndex];
+      const plan = toIndex >= 0 ? transitionPlanFor(fromIndex, toIndex) : null;
+      if (!audio || !plan || crossfadingRef.current || audio.paused || audio.ended) return;
+      if (audio.currentTime >= plan.outgoingStart) beginCrossfade(fromIndex);
+    }, 40);
+    return () => window.clearInterval(timer);
+  }, [activeIndex, anchorKey, isPlaying, mixPlanStatus]);
 
   function handleEnded(index) {
     if (index !== activeIndexRef.current) return;
@@ -490,7 +583,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
           <div className="mix-progress"><span>{formatTime(currentTime)}</span><input type="range" min="0" max={duration || 30} step="0.1" value={Math.min(currentTime, duration || 30)} onChange={(event) => seek(event.target.value)} aria-label="Preview position" /><span>{formatTime(duration || 30)}</span></div>
         </div>
         <div className="mix-actions">
-          <span className="blend-status">{crossfading ? "beat-matched blend live" : nextTrack ? `${nextBlend.toFixed(1)}s beat-matched blend` : "end of queue"}</span>
+          <span className="blend-status">{crossfading ? (mixPlanStatus === "ready" ? "phrase-aligned blend live" : "beat-matched blend live") : nextTrack ? (mixPlanStatus === "ready" ? "preview-analyzed mix ready" : mixPlanStatus === "analyzing" ? "listening for the transition point" : `${nextBlend.toFixed(1)}s beat-matched blend`) : "end of queue"}</span>
           <button className="visuals-button" onClick={() => setVisualizerOpen(true)}>Visuals ↗</button>
           <a href={youtubeSearchUrl(activeTrack)} target="_blank" rel="noreferrer" onClick={() => onInteraction(activeTrack, "youtube_opened")}>YouTube ↗</a>
           <button className="queue-button" onClick={() => setQueueOpen((open) => !open)} aria-expanded={queueOpen}><span>Up next</span><strong>{loading ? "…" : playableFollowups}</strong></button>
