@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-
-const FullscreenVisualizer = lazy(() => import("./FullscreenVisualizer"));
+import { useEffect, useRef, useState } from "react";
+import FullscreenVisualizer from "./FullscreenVisualizer";
 
 function PlayIcon({ playing }) {
   return playing
@@ -315,25 +314,23 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     <motion.aside className={`mix-player ${queueOpen ? "queue-open" : ""}`} initial={{ y: 140 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 24 }} aria-label="Cerum AutoMix player">
       <AnimatePresence>
         {visualizerOpen && (
-          <Suspense fallback={null}>
-            <FullscreenVisualizer
-              track={activeTrack}
-              nextTrack={nextTrack}
-              queue={queue}
-              activeIndex={activeIndex}
-              isPlaying={isPlaying}
-              crossfading={crossfading}
-              currentTime={currentTime}
-              duration={duration}
-              palette={palette}
-              onClose={() => setVisualizerOpen(false)}
-              onTogglePlayback={togglePlayback}
-              onPrevious={previous}
-              onNext={next}
-              onSeek={seek}
-              onChooseTrack={(index) => startAt(index, isPlaying)}
-            />
-          </Suspense>
+          <FullscreenVisualizer
+            track={activeTrack}
+            nextTrack={nextTrack}
+            queue={queue}
+            activeIndex={activeIndex}
+            isPlaying={isPlaying}
+            crossfading={crossfading}
+            currentTime={currentTime}
+            duration={duration}
+            palette={palette}
+            onClose={() => setVisualizerOpen(false)}
+            onTogglePlayback={togglePlayback}
+            onPrevious={previous}
+            onNext={next}
+            onSeek={seek}
+            onChooseTrack={(index) => startAt(index, isPlaying)}
+          />
         )}
         {queueOpen && (
           <motion.div className="mix-queue" initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 28 }} transition={{ duration: .22 }}>
