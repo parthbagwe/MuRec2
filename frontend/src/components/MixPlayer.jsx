@@ -314,7 +314,27 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   return (
     <motion.aside className={`mix-player ${queueOpen ? "queue-open" : ""}`} initial={{ y: 140 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 150, damping: 24 }} aria-label="Cerum AutoMix player">
       <AnimatePresence>
-        {visualizerOpen && <Suspense fallback={null}><FullscreenVisualizer track={activeTrack} nextTrack={nextTrack} isPlaying={isPlaying} crossfading={crossfading} currentTime={currentTime} palette={palette} onClose={() => setVisualizerOpen(false)} /></Suspense>}
+        {visualizerOpen && (
+          <Suspense fallback={null}>
+            <FullscreenVisualizer
+              track={activeTrack}
+              nextTrack={nextTrack}
+              queue={queue}
+              activeIndex={activeIndex}
+              isPlaying={isPlaying}
+              crossfading={crossfading}
+              currentTime={currentTime}
+              duration={duration}
+              palette={palette}
+              onClose={() => setVisualizerOpen(false)}
+              onTogglePlayback={togglePlayback}
+              onPrevious={previous}
+              onNext={next}
+              onSeek={seek}
+              onChooseTrack={(index) => startAt(index, isPlaying)}
+            />
+          </Suspense>
+        )}
         {queueOpen && (
           <motion.div className="mix-queue" initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 28 }} transition={{ duration: .22 }}>
             <div className="mix-queue-heading"><div><small>Acoustic AutoMix</small><strong>{loading ? "Building the next five…" : `${playableFollowups} transitions ready`}</strong></div><button onClick={() => setQueueOpen(false)} aria-label="Close queue">×</button></div>
