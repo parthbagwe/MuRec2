@@ -199,7 +199,12 @@ export function analyzePreview(previewUrl) {
   if (!previewUrl) return Promise.reject(new Error("A preview URL is required."));
   if (previewAnalysisCache.has(previewUrl)) return previewAnalysisCache.get(previewUrl);
   const analysis = (async () => {
-    const response = await fetch(previewUrl, { mode: "cors", cache: "force-cache" });
+    const proxyUrl = `/preview-analysis?source=${encodeURIComponent(previewUrl)}`;
+    let response = await fetch(proxyUrl, { cache: "force-cache" });
+    const proxyType = response.headers.get("content-type") || "";
+    if (!response.ok || !proxyType.toLowerCase().startsWith("audio/")) {
+      response = await fetch(previewUrl, { mode: "cors", cache: "force-cache" });
+    }
     if (!response.ok) throw new Error(`Preview analysis failed with ${response.status}.`);
     const encodedAudio = await response.arrayBuffer();
     const OfflineContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
