@@ -39,6 +39,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const crossfadingRef = useRef(false);
   const activeIndexRef = useRef(0);
   const isPlayingRef = useRef(false);
+  const queueRef = useRef(queue);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -60,6 +61,10 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    queueRef.current = queue;
+  }, [queue]);
 
   useEffect(() => {
     window.clearInterval(animationRef.current);
@@ -148,11 +153,11 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, []);
 
   function nextPlayableIndex(fromIndex) {
-    return queue.findIndex((track, index) => index > fromIndex && Boolean(track.preview_url));
+    return queueRef.current.findIndex((track, index) => index > fromIndex && Boolean(track.preview_url));
   }
 
   async function startAt(index, shouldPlay = true) {
-    const track = queue[index];
+    const track = queueRef.current[index];
     const audio = audioRefs.current[index];
     if (!track?.preview_url || !audio) {
       setPlaybackError("That preview is unavailable. Choose another song in the queue.");
@@ -228,10 +233,11 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     if (!outgoing || !incoming) return;
     crossfadingRef.current = true;
     setCrossfading(true);
-    const seconds = blendLength(queue[toIndex]);
+    const currentQueue = queueRef.current;
+    const seconds = blendLength(currentQueue[toIndex]);
     incoming.currentTime = 0;
     incoming.volume = 0;
-    incoming.playbackRate = compatiblePlaybackRate(queue[fromIndex], queue[toIndex]);
+    incoming.playbackRate = compatiblePlaybackRate(currentQueue[fromIndex], currentQueue[toIndex]);
     try {
       await incoming.play();
     } catch {
@@ -258,9 +264,9 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       setDuration(incoming.duration || 0);
       setCrossfading(false);
       crossfadingRef.current = false;
-      onTrackChange(queue[toIndex]);
-      onInteraction(queue[fromIndex], "preview_completed");
-      onInteraction(queue[toIndex], "preview_started");
+      onTrackChange(currentQueue[toIndex]);
+      onInteraction(currentQueue[fromIndex], "preview_completed");
+      onInteraction(currentQueue[toIndex], "preview_started");
     };
     animateBlend();
     animationRef.current = window.setInterval(animateBlend, 25);
@@ -273,12 +279,12 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     setCurrentTime(audio.currentTime);
     setDuration(audio.duration || 0);
     const remaining = audio.duration - audio.currentTime;
-    if (isPlayingRef.current && remaining > 0 && remaining <= blendLength(queue[nextPlayableIndex(index)])) beginCrossfade(index);
+    if (isPlayingRef.current && remaining > 0 && remaining <= blendLength(queueRef.current[nextPlayableIndex(index)])) beginCrossfade(index);
   }
 
   function handleEnded(index) {
     if (crossfadingRef.current || index !== activeIndexRef.current) return;
-    onInteraction(queue[index], "preview_completed");
+    onInteraction(queueRef.current[index], "preview_completed");
     const nextIndex = nextPlayableIndex(index);
     if (nextIndex >= 0) startAt(nextIndex);
     else stopPlayback(true);
