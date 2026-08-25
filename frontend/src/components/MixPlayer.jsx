@@ -35,6 +35,8 @@ function blendLength(currentTrack, nextTrack) {
 export default function MixPlayer({ queue, loading, autoPlayToken, playbackHandoff, externalPlayingTrackId, palette, onTrackChange, onInteraction }) {
   const audioRefs = useRef([]);
   const animationRef = useRef(null);
+  const blendFallbackRef = useRef(null);
+  const finishBlendRef = useRef(null);
   const crossfadingRef = useRef(false);
   const activeIndexRef = useRef(0);
   const isPlayingRef = useRef(false);
@@ -53,6 +55,14 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const nextTrack = queue.slice(activeIndex + 1).find((track) => track.preview_url);
   const nextBlend = blendLength(activeTrack, nextTrack);
 
+  function clearBlendCompletion() {
+    cancelAnimationFrame(animationRef.current);
+    window.clearTimeout(blendFallbackRef.current);
+    animationRef.current = null;
+    blendFallbackRef.current = null;
+    finishBlendRef.current = null;
+  }
+
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
@@ -66,7 +76,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, [queue]);
 
   useEffect(() => {
-    cancelAnimationFrame(animationRef.current);
+    clearBlendCompletion();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => {
       if (!audio) return;
@@ -139,7 +149,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
 
   useEffect(() => {
     if (!externalPlayingTrackId || !isPlaying) return;
-    cancelAnimationFrame(animationRef.current);
+    clearBlendCompletion();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => audio?.pause());
     setIsPlaying(false);
@@ -147,7 +157,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, [externalPlayingTrackId, isPlaying]);
 
   useEffect(() => () => {
-    cancelAnimationFrame(animationRef.current);
+    clearBlendCompletion();
     audioRefs.current.forEach((audio) => audio?.pause());
   }, []);
 
@@ -162,7 +172,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       setPlaybackError("That preview is unavailable. Choose another song in the queue.");
       return;
     }
-    cancelAnimationFrame(animationRef.current);
+    clearBlendCompletion();
     crossfadingRef.current = false;
     audioRefs.current.forEach((item, itemIndex) => {
       if (!item || itemIndex === index) return;
@@ -195,7 +205,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }
 
   function stopPlayback(reset = false) {
-    cancelAnimationFrame(animationRef.current);
+    clearBlendCompletion();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => {
       if (!audio) return;
@@ -241,20 +251,17 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     try {
       await incoming.play();
     } catch {
+      clearBlendCompletion();
       crossfadingRef.current = false;
       setCrossfading(false);
       return;
     }
     const startedAt = performance.now();
-    const animateBlend = () => {
-      const now = performance.now();
-      const progress = Math.min(1, (now - startedAt) / (seconds * 1000));
-      outgoing.volume = Math.max(0, Math.min(1, Math.cos(progress * Math.PI / 2)));
-      incoming.volume = Math.max(0, Math.min(1, Math.sin(progress * Math.PI / 2)));
-      if (progress < 1) {
-        animationRef.current = requestAnimationFrame(animateBlend);
-        return;
-      }
+    let finished = false;
+    const finishBlend = () => {
+      if (finished) return;
+      finished = true;
+      clearBlendCompletion();
       outgoing.pause();
       outgoing.currentTime = 0;
       outgoing.volume = 1;
@@ -269,6 +276,23 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       onTrackChange(currentQueue[toIndex]);
       onInteraction(currentQueue[fromIndex], "preview_completed");
       onInteraction(currentQueue[toIndex], "preview_started");
+    };
+    finishBlendRef.current = finishBlend;
+    blendFallbackRef.current = window.setTimeout(finishBlend, seconds * 1000 + 250);
+    if (outgoing.ended) {
+      finishBlend();
+      return;
+    }
+    const animateBlend = () => {
+      const now = performance.now();
+      const progress = Math.min(1, (now - startedAt) / (seconds * 1000));
+      outgoing.volume = Math.max(0, Math.min(1, Math.cos(progress * Math.PI / 2)));
+      incoming.volume = Math.max(0, Math.min(1, Math.sin(progress * Math.PI / 2)));
+      if (progress < 1) {
+        animationRef.current = requestAnimationFrame(animateBlend);
+        return;
+      }
+      finishBlend();
     };
     animationRef.current = requestAnimationFrame(animateBlend);
   }
@@ -285,7 +309,11 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }
 
   function handleEnded(index) {
-    if (crossfadingRef.current || index !== activeIndexRef.current) return;
+    if (index !== activeIndexRef.current) return;
+    if (crossfadingRef.current) {
+      finishBlendRef.current?.();
+      return;
+    }
     onInteraction(queueRef.current[index], "preview_completed");
     const nextIndex = nextPlayableIndex(index);
     if (nextIndex >= 0) startAt(nextIndex);
