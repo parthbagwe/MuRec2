@@ -70,6 +70,7 @@ def _row_to_track(row) -> TrackResponse:
         return cast(value) if cast else value
 
     fingerprint = _acoustic_index.get(str(row["track_id"])) if _acoustic_index else None
+    fingerprint_bpm = (fingerprint or {}).get("profile", {}).get("bpm")
     return TrackResponse(
         track_id=row["track_id"],
         title=row["title"],
@@ -77,7 +78,7 @@ def _row_to_track(row) -> TrackResponse:
         genre="MuRec2 acoustic" if fingerprint else "Audio analysis pending",
         subgenre=fingerprint["acoustic_signature"] if fingerprint else None,
         year=optional("year", int),
-        bpm=optional("bpm", int),
+        bpm=round(fingerprint_bpm) if fingerprint_bpm is not None else optional("bpm", int),
         energy=optional("energy", int),
         valence=optional("valence", float),
         popularity=optional("popularity", int),

@@ -385,6 +385,7 @@ class AcousticIndex:
             chain.append({
                 "track_id": track_id, "title": row["title"], "artist": row["artist"],
                 "genre": "MuRec2 acoustic", "subgenre": candidate_fp["acoustic_signature"],
+                "bpm": round(candidate_fp["profile"]["bpm"]),
                 "year": int(row["year"]) if pd.notna(row.get("year")) else None,
                 "album": row.get("album"), "artwork_url": row.get("artwork_url"),
                 "preview_url": row.get("preview_url"), "external_url": row.get("external_url"),

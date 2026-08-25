@@ -190,7 +190,7 @@ export default function FullscreenVisualizer({
 
       <section className="heightmap-deck" aria-label="AutoMix controls">
         <div className="heightmap-now">
-          <small>{crossfading ? "Equal-power blend live" : "Now playing"}</small>
+          <small>{crossfading ? "Beat-matched blend live" : "Now playing"}</small>
           <strong>{track.title}</strong>
           <span>{track.artist}</span>
         </div>

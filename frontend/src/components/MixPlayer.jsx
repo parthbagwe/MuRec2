@@ -19,10 +19,18 @@ function youtubeSearchUrl(track) {
 }
 
 function transitionTempoDifference(currentTrack, nextTrack) {
-  const currentBpm = Number(currentTrack?.bpm);
-  const nextBpm = Number(nextTrack?.bpm);
+  const [currentBpm, nextBpm] = transitionBpms(currentTrack, nextTrack);
   if (!currentBpm || !nextBpm) return 8;
   return Math.min(...[nextBpm, nextBpm / 2, nextBpm * 2].map((candidate) => Math.abs(currentBpm - candidate)));
+}
+
+function transitionBpms(currentTrack, nextTrack) {
+  let currentBpm = Number(currentTrack?.bpm);
+  let nextBpm = Number(nextTrack?.bpm);
+  const edgeMatch = String(nextTrack?.transition_note || "").match(/([\d.]+)\s*→\s*([\d.]+)\s*BPM/i);
+  if (!currentBpm && edgeMatch) currentBpm = Number(edgeMatch[1]);
+  if (!nextBpm && edgeMatch) nextBpm = Number(edgeMatch[2]);
+  return [currentBpm, nextBpm];
 }
 
 function blendLength(currentTrack, nextTrack) {
@@ -32,9 +40,26 @@ function blendLength(currentTrack, nextTrack) {
   return Math.max(2.4, Math.min(4.6, 2.4 + tempoFit * 1.35 + score * 0.85));
 }
 
+function tempoMatchRate(currentTrack, nextTrack) {
+  const [currentBpm, nextBpm] = transitionBpms(currentTrack, nextTrack);
+  if (!currentBpm || !nextBpm) return 1;
+  const matchedNextBpm = [nextBpm, nextBpm / 2, nextBpm * 2]
+    .sort((a, b) => Math.abs(currentBpm - a) - Math.abs(currentBpm - b))[0];
+  return Math.max(0.94, Math.min(1.06, currentBpm / matchedNextBpm));
+}
+
+function beatAlignmentDelay(audio, currentTrack, nextTrack) {
+  const [bpm] = transitionBpms(currentTrack, nextTrack);
+  if (!bpm || !audio) return 0;
+  const beatSeconds = 60 / bpm;
+  const delay = (beatSeconds - (audio.currentTime % beatSeconds)) % beatSeconds;
+  return delay < 0.06 ? 0 : Math.min(0.65, delay);
+}
+
 export default function MixPlayer({ queue, loading, autoPlayToken, playbackHandoff, externalPlayingTrackId, palette, onTrackChange, onInteraction }) {
   const audioRefs = useRef([]);
   const animationRef = useRef(null);
+  const rateAnimationRef = useRef(null);
   const blendFallbackRef = useRef(null);
   const finishBlendRef = useRef(null);
   const crossfadingRef = useRef(false);
@@ -63,6 +88,34 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     finishBlendRef.current = null;
   }
 
+  function clearRateAutomation() {
+    cancelAnimationFrame(rateAnimationRef.current);
+    rateAnimationRef.current = null;
+  }
+
+  function settlePlaybackRate(audio, startingRate) {
+    clearRateAutomation();
+    if (!audio || Math.abs(startingRate - 1) < 0.002) {
+      if (audio) audio.playbackRate = 1;
+      return;
+    }
+    const startedAt = performance.now();
+    const durationMs = 6000;
+    const animateRate = () => {
+      if (audio.paused || audio.ended) {
+        audio.playbackRate = 1;
+        rateAnimationRef.current = null;
+        return;
+      }
+      const progress = Math.min(1, (performance.now() - startedAt) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      audio.playbackRate = startingRate + (1 - startingRate) * eased;
+      if (progress < 1) rateAnimationRef.current = requestAnimationFrame(animateRate);
+      else rateAnimationRef.current = null;
+    };
+    rateAnimationRef.current = requestAnimationFrame(animateRate);
+  }
+
   useEffect(() => {
     activeIndexRef.current = activeIndex;
   }, [activeIndex]);
@@ -77,6 +130,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
 
   useEffect(() => {
     clearBlendCompletion();
+    clearRateAutomation();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => {
       if (!audio) return;
@@ -150,6 +204,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   useEffect(() => {
     if (!externalPlayingTrackId || !isPlaying) return;
     clearBlendCompletion();
+    clearRateAutomation();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => audio?.pause());
     setIsPlaying(false);
@@ -158,6 +213,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
 
   useEffect(() => () => {
     clearBlendCompletion();
+    clearRateAutomation();
     audioRefs.current.forEach((audio) => audio?.pause());
   }, []);
 
@@ -173,6 +229,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       return;
     }
     clearBlendCompletion();
+    clearRateAutomation();
     crossfadingRef.current = false;
     audioRefs.current.forEach((item, itemIndex) => {
       if (!item || itemIndex === index) return;
@@ -206,6 +263,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
 
   function stopPlayback(reset = false) {
     clearBlendCompletion();
+    clearRateAutomation();
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => {
       if (!audio) return;
@@ -244,10 +302,18 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     setCrossfading(true);
     const currentQueue = queueRef.current;
     const seconds = blendLength(currentQueue[fromIndex], currentQueue[toIndex]);
+    const matchedRate = tempoMatchRate(currentQueue[fromIndex], currentQueue[toIndex]);
+    const beatDelay = beatAlignmentDelay(outgoing, currentQueue[fromIndex], currentQueue[toIndex]);
     incoming.currentTime = 0;
     incoming.volume = 0;
-    incoming.playbackRate = 1;
+    incoming.playbackRate = matchedRate;
     incoming.preservesPitch = true;
+    if (beatDelay > 0) await new Promise((resolve) => window.setTimeout(resolve, beatDelay * 1000));
+    if (!crossfadingRef.current || !isPlayingRef.current || outgoing.ended) {
+      crossfadingRef.current = false;
+      setCrossfading(false);
+      return;
+    }
     try {
       await incoming.play();
     } catch {
@@ -266,7 +332,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       outgoing.currentTime = 0;
       outgoing.volume = 1;
       incoming.volume = 1;
-      incoming.playbackRate = 1;
+      settlePlaybackRate(incoming, matchedRate);
       activeIndexRef.current = toIndex;
       setActiveIndex(toIndex);
       setCurrentTime(incoming.currentTime);
@@ -305,7 +371,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     setDuration(audio.duration || 0);
     const remaining = audio.duration - audio.currentTime;
     const nextIndex = nextPlayableIndex(index);
-    if (isPlayingRef.current && nextIndex >= 0 && remaining > 0 && remaining <= blendLength(queueRef.current[index], queueRef.current[nextIndex])) beginCrossfade(index);
+    if (isPlayingRef.current && nextIndex >= 0 && remaining > 0 && remaining <= blendLength(queueRef.current[index], queueRef.current[nextIndex]) + 0.7) beginCrossfade(index);
   }
 
   function handleEnded(index) {
@@ -403,7 +469,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
           <div className="mix-progress"><span>{formatTime(currentTime)}</span><input type="range" min="0" max={duration || 30} step="0.1" value={Math.min(currentTime, duration || 30)} onChange={(event) => seek(event.target.value)} aria-label="Preview position" /><span>{formatTime(duration || 30)}</span></div>
         </div>
         <div className="mix-actions">
-          <span className="blend-status">{crossfading ? "equal-power blend live" : nextTrack ? `${nextBlend.toFixed(1)}s equal-power fade` : "end of queue"}</span>
+          <span className="blend-status">{crossfading ? "beat-matched blend live" : nextTrack ? `${nextBlend.toFixed(1)}s beat-matched blend` : "end of queue"}</span>
           <button className="visuals-button" onClick={() => setVisualizerOpen(true)}>Visuals ↗</button>
           <a href={youtubeSearchUrl(activeTrack)} target="_blank" rel="noreferrer" onClick={() => onInteraction(activeTrack, "youtube_opened")}>YouTube ↗</a>
           <button className="queue-button" onClick={() => setQueueOpen((open) => !open)} aria-expanded={queueOpen}><span>Up next</span><strong>{loading ? "…" : playableFollowups}</strong></button>
