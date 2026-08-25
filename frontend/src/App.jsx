@@ -68,6 +68,7 @@ export default function App() {
   const [mixQueue, setMixQueue] = useState([]);
   const [mixLoading, setMixLoading] = useState(false);
   const [autoPlayToken, setAutoPlayToken] = useState(0);
+  const [playbackHandoff, setPlaybackHandoff] = useState(null);
   const recommendationRequest = useRef(0);
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
@@ -94,13 +95,18 @@ export default function App() {
     }
   }
 
-  async function recommend(track, nextWeights = weights, nextMode = mode) {
-    if (nextMode === "personalized" && !user) { setAuthOpen(true); return; }
+  async function recommend(track, nextWeights = weights, nextMode = mode, handoff = null) {
+    if (nextMode === "personalized" && !user) {
+      handoff?.audio.pause();
+      setAuthOpen(true);
+      return;
+    }
     handlePreviewChange(null);
     setSelected(track);
     setLoading(true);
     setError("");
     setAudioProfile(null);
+    setPlaybackHandoff(handoff);
     setMixQueue([track]);
     setAutoPlayToken((token) => token + 1);
     setMixLoading(true);
@@ -230,7 +236,7 @@ export default function App() {
         </div>
         <motion.div className="search-stage" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 92, damping: 22, delay: .18 }}>
           <p className="search-label">Start with one song</p>
-          <SearchBar onSelect={recommend} onAnalyze={analyze} analyzing={analyzing} />
+          <SearchBar onSelect={(track, handoff) => recommend(track, weights, mode, handoff)} onAnalyze={analyze} analyzing={analyzing} />
           {indexStatus && <p className="index-status"><span className={indexStatus.building ? "status-dot building" : "status-dot"} />{indexStatus.indexed.toLocaleString()} / {indexStatus.total.toLocaleString()} acoustic fingerprints ready{lyricStatus ? ` · ${lyricStatus.analyzed.toLocaleString()} licensed lyric maps ready` : ""}</p>}
         </motion.div>
       </section>
@@ -277,7 +283,7 @@ export default function App() {
       <footer><span>Cerum · Acoustic scoring with fine-style guardrails · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={(track) => recommend(track)} />
-      <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
+      <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} playbackHandoff={playbackHandoff} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
     </main>
   );
 }

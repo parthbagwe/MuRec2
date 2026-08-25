@@ -9,6 +9,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
   const [searchError, setSearchError] = useState("");
   const requestId = useRef(0);
   const suppressSearch = useRef(false);
+  const preparedAudio = useRef(null);
 
   useEffect(() => {
     if (suppressSearch.current) {
@@ -44,13 +45,46 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
     return () => clearTimeout(timer);
   }, [query]);
 
+  useEffect(() => {
+    const track = results[0];
+    if (!track?.preview_url) return undefined;
+    const prepared = {
+      trackId: track.track_id,
+      audio: new Audio(track.preview_url),
+      adopted: false,
+    };
+    prepared.audio.preload = "auto";
+    prepared.audio.load();
+    preparedAudio.current = prepared;
+    return () => {
+      if (preparedAudio.current === prepared) preparedAudio.current = null;
+      if (prepared.adopted) return;
+      prepared.audio.pause();
+      prepared.audio.removeAttribute("src");
+      prepared.audio.load();
+    };
+  }, [results]);
+
   function select(track) {
+    let playbackHandoff = null;
+    if (track.preview_url) {
+      let prepared = preparedAudio.current;
+      if (!prepared || prepared.trackId !== track.track_id) {
+        prepared = { trackId: track.track_id, audio: new Audio(track.preview_url), adopted: false };
+        prepared.audio.preload = "auto";
+      }
+      prepared.adopted = true;
+      preparedAudio.current = null;
+      const playPromise = prepared.audio.play();
+      playPromise.catch(() => {});
+      playbackHandoff = { trackId: track.track_id, audio: prepared.audio, playPromise, token: Date.now() };
+    }
     suppressSearch.current = true;
     setQuery(`${track.title} — ${track.artist}`);
     setResults([]);
     setSearched(false);
     setSearchError("");
-    onSelect(track);
+    onSelect(track, playbackHandoff);
   }
 
   async function upload(file) {
@@ -64,7 +98,18 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
   return (
     <div className="search-wrap">
       <svg className="search-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-4.6-4.6m2.5-5.4a7.9 7.9 0 1 1-15.8 0 7.9 7.9 0 0 1 15.8 0Z" /></svg>
-      <input aria-label="Search songs" placeholder="Search a song or artist…" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <input
+        aria-label="Search songs"
+        placeholder="Search a song or artist…"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing && results[0]) {
+            event.preventDefault();
+            select(results[0]);
+          }
+        }}
+      />
       {loading && <span className="search-status">searching</span>}
       {(results.length > 0 || searched || searchError) && (
         <div className="search-results">

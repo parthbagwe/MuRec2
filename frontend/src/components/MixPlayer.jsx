@@ -34,11 +34,12 @@ function compatiblePlaybackRate(currentTrack, nextTrack) {
   return Math.abs(ratio - 1) <= 0.045 ? ratio : 1;
 }
 
-export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayingTrackId, palette, onTrackChange, onInteraction }) {
+export default function MixPlayer({ queue, loading, autoPlayToken, playbackHandoff, externalPlayingTrackId, palette, onTrackChange, onInteraction }) {
   const audioRefs = useRef([]);
   const animationRef = useRef(null);
   const crossfadingRef = useRef(false);
   const activeIndexRef = useRef(0);
+  const isPlayingRef = useRef(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -58,6 +59,10 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
   }, [activeIndex]);
 
   useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
     window.clearInterval(animationRef.current);
     crossfadingRef.current = false;
     audioRefs.current.forEach((audio) => {
@@ -68,6 +73,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
       audio.playbackRate = 1;
     });
     activeIndexRef.current = 0;
+    isPlayingRef.current = false;
     setActiveIndex(0);
     setIsPlaying(false);
     setCurrentTime(0);
@@ -78,8 +84,48 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
   }, [anchorKey, onTrackChange]);
 
   useEffect(() => {
+    if (!playbackHandoff || playbackHandoff.trackId !== anchorKey) return undefined;
+    const audio = playbackHandoff.audio;
+    const track = queue[0];
+    const previousAudio = audioRefs.current[0];
+    if (previousAudio && previousAudio !== audio) {
+      previousAudio.pause();
+      previousAudio.currentTime = 0;
+    }
+    audioRefs.current[0] = audio;
+    const syncTime = () => handleTimeUpdate(0);
+    const syncDuration = () => setDuration(audio.duration || 0);
+    const finish = () => handleEnded(0);
+    audio.addEventListener("loadedmetadata", syncDuration);
+    audio.addEventListener("timeupdate", syncTime);
+    audio.addEventListener("ended", finish);
+    setCurrentTime(audio.currentTime || 0);
+    setDuration(audio.duration || 0);
+    setPlaybackError("");
+    playbackHandoff.playPromise
+      .then(() => {
+        setIsPlaying(true);
+        isPlayingRef.current = true;
+        onTrackChange(track);
+        onInteraction(track, "preview_started");
+      })
+      .catch(() => {
+        setIsPlaying(false);
+        isPlayingRef.current = false;
+        onTrackChange(null);
+        setPlaybackError("This preview could not start. Try YouTube for the full song.");
+      });
+    return () => {
+      audio.removeEventListener("loadedmetadata", syncDuration);
+      audio.removeEventListener("timeupdate", syncTime);
+      audio.removeEventListener("ended", finish);
+    };
+  }, [anchorKey, playbackHandoff?.token]);
+
+  useEffect(() => {
     if (!anchorKey || !autoPlayToken || autoPlayToken === lastAutoPlayToken.current) return undefined;
     lastAutoPlayToken.current = autoPlayToken;
+    if (playbackHandoff?.trackId === anchorKey) return undefined;
     const audio = audioRefs.current[0];
     if (!audio) return undefined;
     const begin = () => startAt(0);
@@ -133,10 +179,12 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
     audio.playbackRate = 1;
     try {
       await audio.play();
+      isPlayingRef.current = true;
       setIsPlaying(true);
       onTrackChange(track);
       onInteraction(track, "preview_started");
     } catch {
+      isPlayingRef.current = false;
       setIsPlaying(false);
       onTrackChange(null);
       setPlaybackError("This preview could not start. Try YouTube for the full song.");
@@ -154,6 +202,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
       if (reset) audio.currentTime = 0;
     });
     setCrossfading(false);
+    isPlayingRef.current = false;
     setIsPlaying(false);
     onTrackChange(null);
   }
@@ -172,7 +221,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
   }
 
   async function beginCrossfade(fromIndex) {
-    if (crossfadingRef.current || !isPlaying) return;
+    if (crossfadingRef.current || !isPlayingRef.current) return;
     const toIndex = nextPlayableIndex(fromIndex);
     if (toIndex < 0) return;
     const outgoing = audioRefs.current[fromIndex];
@@ -225,7 +274,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
     setCurrentTime(audio.currentTime);
     setDuration(audio.duration || 0);
     const remaining = audio.duration - audio.currentTime;
-    if (isPlaying && remaining > 0 && remaining <= blendLength(queue[nextPlayableIndex(index)])) beginCrossfade(index);
+    if (isPlayingRef.current && remaining > 0 && remaining <= blendLength(queue[nextPlayableIndex(index)])) beginCrossfade(index);
   }
 
   function handleEnded(index) {
@@ -306,7 +355,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, externalPlayi
         </div>
       </div>
       {playbackError && <p className="mix-error" role="alert">{playbackError}</p>}
-      {queue.map((track, index) => track.preview_url && <audio key={`${track.track_id}-audio`} ref={(node) => { audioRefs.current[index] = node; }} src={track.preview_url} preload={index <= activeIndex + 2 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(event.currentTarget.duration); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} />)}
+      {queue.map((track, index) => track.preview_url && !(index === 0 && playbackHandoff?.trackId === track.track_id) && <audio key={`${track.track_id}-audio`} ref={(node) => { audioRefs.current[index] = node; }} src={track.preview_url} preload={index <= activeIndex + 2 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(event.currentTarget.duration); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} />)}
     </motion.aside>
   );
 }

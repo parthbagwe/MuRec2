@@ -16,6 +16,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retryToken, setRetryToken] = useState(0);
   const [playingId, setPlayingId] = useState(null);
   const audioRef = useRef(null);
 
@@ -24,12 +25,21 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
     let active = true;
     setLoading(true);
     setError("");
-    getCharts(region)
-      .then((response) => active && setCharts((current) => ({ ...current, [region]: response.data.tracks })))
-      .catch(() => active && setError("Charts are taking a moment. Search still works."))
-      .finally(() => active && setLoading(false));
+    async function loadCharts() {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const response = await getCharts(region);
+          if (active) setCharts((current) => ({ ...current, [region]: response.data.tracks }));
+          return;
+        } catch {
+          if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        }
+      }
+      if (active) setError("The live chart feed did not answer.");
+    }
+    loadCharts().finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, [region, charts]);
+  }, [region, charts, retryToken]);
 
   useEffect(() => () => audioRef.current?.pause(), []);
 
@@ -64,7 +74,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
   }
 
   return (
-    <motion.section className="charts-panel" initial={{ opacity: 0, x: 90 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 90, damping: 22, delay: .08 }} aria-labelledby="charts-title">
+    <motion.section className={`charts-panel ${error ? "has-error" : ""} ${loading && !tracks.length ? "is-loading" : ""}`} initial={{ opacity: 0, x: 90 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 90, damping: 22, delay: .08 }} aria-labelledby="charts-title">
       <header className="charts-header">
         <div><p className="kicker">Live chart pulse</p><h2 id="charts-title">Top 50</h2></div>
         <div className="chart-tabs" role="tablist" aria-label="Country chart">
@@ -72,8 +82,15 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
         </div>
       </header>
       <div className="chart-list-shell">
-        {loading && <p className="chart-state">Loading today’s songs…</p>}
-        {error && <p className="chart-state error">{error}</p>}
+        {loading && !tracks.length && <p className="chart-state loading">Loading today’s songs…<span aria-hidden="true" /></p>}
+        {error && (
+          <motion.div className="chart-state error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} role="alert">
+            <span>Feed temporarily quiet</span>
+            <strong>{error}</strong>
+            <p>Search and instant playback are still ready.</p>
+            <button onClick={() => setRetryToken((value) => value + 1)}>Retry live charts ↗</button>
+          </motion.div>
+        )}
         <AnimatePresence mode="wait" initial={false}>
           <motion.ol key={`${region}-${expanded}`} className="chart-list" initial={{ opacity: 0, x: 36 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -36 }} transition={{ duration: .35, ease: [0.22, 1, 0.36, 1] }}>
             {visible.map((track) => (
