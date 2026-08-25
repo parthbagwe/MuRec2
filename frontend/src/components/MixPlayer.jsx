@@ -56,49 +56,6 @@ function beatAlignmentDelay(audio, currentTrack, nextTrack) {
   return delay < 0.06 ? 0 : Math.min(0.65, delay);
 }
 
-function waitForMediaReady(audio, timeoutMs = 2400) {
-  if (!audio || audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve(Boolean(audio));
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (ready) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      audio.removeEventListener("canplay", onReady);
-      audio.removeEventListener("loadeddata", onReady);
-      audio.removeEventListener("error", onError);
-      resolve(ready);
-    };
-    const onReady = () => finish(true);
-    const onError = () => finish(false);
-    const timeout = window.setTimeout(() => finish(audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA), timeoutMs);
-    audio.addEventListener("canplay", onReady, { once: true });
-    audio.addEventListener("loadeddata", onReady, { once: true });
-    audio.addEventListener("error", onError, { once: true });
-    audio.load();
-  });
-}
-
-async function playWithRetry(audio, isCurrent) {
-  let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (!isCurrent()) return { ok: false, cancelled: true, error: lastError };
-    try {
-      await audio.play();
-      return { ok: true, cancelled: false, error: null };
-    } catch (error) {
-      lastError = error;
-      if (attempt === 1 || !isCurrent()) break;
-      if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || audio.error) {
-        await waitForMediaReady(audio);
-      } else {
-        await new Promise((resolve) => window.setTimeout(resolve, 180));
-      }
-    }
-  }
-  return { ok: false, cancelled: !isCurrent(), error: lastError };
-}
-
 export default function MixPlayer({ queue, loading, autoPlayToken, playbackHandoff, externalPlayingTrackId, palette, onTrackChange, onInteraction }) {
   const audioRefs = useRef([]);
   const animationRef = useRef(null);
@@ -106,7 +63,6 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const blendFallbackRef = useRef(null);
   const finishBlendRef = useRef(null);
   const crossfadingRef = useRef(false);
-  const playbackGenerationRef = useRef(0);
   const activeIndexRef = useRef(0);
   const isPlayingRef = useRef(false);
   const queueRef = useRef(queue);
@@ -173,7 +129,6 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, [queue]);
 
   useEffect(() => {
-    playbackGenerationRef.current += 1;
     clearBlendCompletion();
     clearRateAutomation();
     crossfadingRef.current = false;
@@ -266,12 +221,12 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     return queueRef.current.findIndex((track, index) => index > fromIndex && Boolean(track.preview_url));
   }
 
-  async function activateTrack(index, shouldPlay, generation, suppressError = false) {
+  async function startAt(index, shouldPlay = true) {
     const track = queueRef.current[index];
     const audio = audioRefs.current[index];
     if (!track?.preview_url || !audio) {
-      if (!suppressError) setPlaybackError("That preview is unavailable. Choose another song in the queue.");
-      return false;
+      setPlaybackError("That preview is unavailable. Choose another song in the queue.");
+      return;
     }
     clearBlendCompletion();
     clearRateAutomation();
@@ -289,55 +244,24 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     setDuration(audio.duration || 0);
     setCrossfading(false);
     setPlaybackError("");
-    if (!shouldPlay) return true;
+    if (!shouldPlay) return;
     audio.volume = 1;
     audio.playbackRate = 1;
-    const result = await playWithRetry(audio, () => generation === playbackGenerationRef.current);
-    if (result.cancelled) {
-      audio.pause();
-      return false;
-    }
-    if (result.ok) {
+    try {
+      await audio.play();
       isPlayingRef.current = true;
       setIsPlaying(true);
       onTrackChange(track);
       onInteraction(track, "preview_started");
-      return true;
-    }
-    if (!suppressError && generation === playbackGenerationRef.current) {
+    } catch {
       isPlayingRef.current = false;
       setIsPlaying(false);
       onTrackChange(null);
       setPlaybackError("This preview could not start. Try YouTube for the full song.");
     }
-    return false;
-  }
-
-  async function startAt(index, shouldPlay = true) {
-    const generation = playbackGenerationRef.current + 1;
-    playbackGenerationRef.current = generation;
-    if (shouldPlay) isPlayingRef.current = true;
-    return activateTrack(index, shouldPlay, generation);
-  }
-
-  async function advanceToNext(fromIndex) {
-    const generation = playbackGenerationRef.current + 1;
-    playbackGenerationRef.current = generation;
-    isPlayingRef.current = true;
-    let candidateIndex = nextPlayableIndex(fromIndex);
-    while (candidateIndex >= 0 && generation === playbackGenerationRef.current) {
-      const started = await activateTrack(candidateIndex, true, generation, true);
-      if (started) return true;
-      candidateIndex = nextPlayableIndex(candidateIndex);
-    }
-    if (generation !== playbackGenerationRef.current) return false;
-    stopPlayback(true);
-    setPlaybackError("The remaining previews could not start. Try the songs on YouTube.");
-    return false;
   }
 
   function stopPlayback(reset = false) {
-    playbackGenerationRef.current += 1;
     clearBlendCompletion();
     clearRateAutomation();
     crossfadingRef.current = false;
@@ -369,44 +293,30 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
 
   async function beginCrossfade(fromIndex) {
     if (crossfadingRef.current || !isPlayingRef.current) return;
-    const generation = playbackGenerationRef.current;
+    const toIndex = nextPlayableIndex(fromIndex);
+    if (toIndex < 0) return;
     const outgoing = audioRefs.current[fromIndex];
-    if (!outgoing) return;
+    const incoming = audioRefs.current[toIndex];
+    if (!outgoing || !incoming) return;
     crossfadingRef.current = true;
     setCrossfading(true);
     const currentQueue = queueRef.current;
-    let toIndex = nextPlayableIndex(fromIndex);
-    let incoming = null;
-    let matchedRate = 1;
-    let seconds = 3;
-
-    while (toIndex >= 0 && generation === playbackGenerationRef.current && isPlayingRef.current && !outgoing.ended) {
-      incoming = audioRefs.current[toIndex];
-      if (!incoming) {
-        toIndex = nextPlayableIndex(toIndex);
-        continue;
-      }
-      seconds = blendLength(currentQueue[fromIndex], currentQueue[toIndex]);
-      matchedRate = tempoMatchRate(currentQueue[fromIndex], currentQueue[toIndex]);
-      const beatDelay = beatAlignmentDelay(outgoing, currentQueue[fromIndex], currentQueue[toIndex]);
-      incoming.currentTime = 0;
-      incoming.volume = 0;
-      incoming.playbackRate = matchedRate;
-      incoming.preservesPitch = true;
-      if (beatDelay > 0) await new Promise((resolve) => window.setTimeout(resolve, beatDelay * 1000));
-      if (generation !== playbackGenerationRef.current || !crossfadingRef.current || !isPlayingRef.current || outgoing.ended) break;
-      const result = await playWithRetry(incoming, () => generation === playbackGenerationRef.current && crossfadingRef.current && isPlayingRef.current);
-      if (result.ok) break;
-      incoming.pause();
-      incoming.currentTime = 0;
-      incoming.volume = 1;
-      incoming.playbackRate = 1;
-      incoming = null;
-      toIndex = nextPlayableIndex(toIndex);
+    const seconds = blendLength(currentQueue[fromIndex], currentQueue[toIndex]);
+    const matchedRate = tempoMatchRate(currentQueue[fromIndex], currentQueue[toIndex]);
+    const beatDelay = beatAlignmentDelay(outgoing, currentQueue[fromIndex], currentQueue[toIndex]);
+    incoming.currentTime = 0;
+    incoming.volume = 0;
+    incoming.playbackRate = matchedRate;
+    incoming.preservesPitch = true;
+    if (beatDelay > 0) await new Promise((resolve) => window.setTimeout(resolve, beatDelay * 1000));
+    if (!crossfadingRef.current || !isPlayingRef.current || outgoing.ended) {
+      crossfadingRef.current = false;
+      setCrossfading(false);
+      return;
     }
-
-    if (!incoming || incoming.paused || generation !== playbackGenerationRef.current || !crossfadingRef.current || !isPlayingRef.current) {
-      incoming?.pause();
+    try {
+      await incoming.play();
+    } catch {
       clearBlendCompletion();
       crossfadingRef.current = false;
       setCrossfading(false);
@@ -416,7 +326,6 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     let finished = false;
     const finishBlend = () => {
       if (finished) return;
-      if (generation !== playbackGenerationRef.current) return;
       finished = true;
       clearBlendCompletion();
       outgoing.pause();
@@ -468,19 +377,12 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   function handleEnded(index) {
     if (index !== activeIndexRef.current) return;
     if (crossfadingRef.current) {
-      if (finishBlendRef.current) finishBlendRef.current();
-      else {
-        clearBlendCompletion();
-        crossfadingRef.current = false;
-        setCrossfading(false);
-        onInteraction(queueRef.current[index], "preview_completed");
-        advanceToNext(index);
-      }
+      finishBlendRef.current?.();
       return;
     }
     onInteraction(queueRef.current[index], "preview_completed");
     const nextIndex = nextPlayableIndex(index);
-    if (nextIndex >= 0) advanceToNext(index);
+    if (nextIndex >= 0) startAt(nextIndex);
     else stopPlayback(true);
   }
 
