@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
-import { analyzePreview, buildTransitionPlan } from "../audio/transitionAnalyzer";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { analyzePreview, buildTransitionPlan, samplePreviewProfile } from "../audio/transitionAnalyzer";
 import FullscreenVisualizer from "./FullscreenVisualizer";
 
 function PlayIcon({ playing }) {
@@ -69,6 +69,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const blendFallbackRef = useRef(null);
   const finishBlendRef = useRef(null);
   const transitionPlansRef = useRef(new Map());
+  const analysisProfilesRef = useRef(new Map());
   const crossfadingRef = useRef(false);
   const activeIndexRef = useRef(0);
   const isPlayingRef = useRef(false);
@@ -87,6 +88,32 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const activeTrack = queue[activeIndex] || queue[0];
   const nextTrack = queue.slice(activeIndex + 1).find((track) => track.preview_url);
   const nextBlend = blendLength(activeTrack, nextTrack);
+
+  const getAudioTelemetry = useCallback(() => {
+    const fromIndex = activeIndexRef.current;
+    const toIndex = queueRef.current.findIndex((item, index) => index > fromIndex && Boolean(item.preview_url));
+    const outgoing = audioRefs.current[fromIndex];
+    const incoming = toIndex >= 0 ? audioRefs.current[toIndex] : null;
+    const outgoingTrack = queueRef.current[fromIndex];
+    const incomingTrack = toIndex >= 0 ? queueRef.current[toIndex] : null;
+    const primary = samplePreviewProfile(
+      analysisProfilesRef.current.get(outgoingTrack?.preview_url),
+      outgoing?.currentTime || 0,
+    );
+    const secondary = samplePreviewProfile(
+      analysisProfilesRef.current.get(incomingTrack?.preview_url),
+      incoming?.currentTime || 0,
+    );
+    const outgoingVolume = Number(outgoing?.volume ?? 1);
+    const incomingVolume = crossfadingRef.current ? Number(incoming?.volume ?? 0) : 0;
+    const totalVolume = Math.max(0.001, outgoingVolume + incomingVolume);
+    return {
+      primary,
+      secondary,
+      blend: crossfadingRef.current ? incomingVolume / totalVolume : 0,
+      analyzed: Boolean(primary),
+    };
+  }, []);
 
   function clearBlendCompletion() {
     cancelAnimationFrame(animationRef.current);
@@ -181,6 +208,8 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     setMixPlanStatus("analyzing");
     Promise.all([analyzePreview(fromTrack.preview_url), analyzePreview(toTrack.preview_url)])
       .then(([outgoingProfile, incomingProfile]) => {
+        analysisProfilesRef.current.set(fromTrack.preview_url, outgoingProfile);
+        analysisProfilesRef.current.set(toTrack.preview_url, incomingProfile);
         const plan = buildTransitionPlan(outgoingProfile, incomingProfile, fromTrack, toTrack);
         transitionPlansRef.current.set(key, plan);
         if (!cancelled) setMixPlanStatus("ready");
@@ -190,6 +219,17 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       });
     return () => { cancelled = true; };
   }, [activeIndex, queue]);
+
+  useEffect(() => {
+    if (!activeTrack?.preview_url || analysisProfilesRef.current.has(activeTrack.preview_url)) return undefined;
+    let cancelled = false;
+    analyzePreview(activeTrack.preview_url)
+      .then((profile) => {
+        if (!cancelled) analysisProfilesRef.current.set(activeTrack.preview_url, profile);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeTrack?.preview_url]);
 
   useEffect(() => {
     clearBlendCompletion();
@@ -542,6 +582,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
             currentTime={currentTime}
             duration={duration}
             palette={palette}
+            getAudioTelemetry={getAudioTelemetry}
             onClose={() => setVisualizerOpen(false)}
             onTogglePlayback={togglePlayback}
             onPrevious={previous}

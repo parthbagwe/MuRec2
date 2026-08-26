@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getLyricStatus, getMe, getRecommendations, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
+import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getLyricStatus, getMe, getRecommendations, getSoundBridge, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
@@ -8,6 +8,7 @@ import SearchBar from "./components/SearchBar";
 import TrackPreview from "./components/TrackPreview";
 import MixPlayer from "./components/MixPlayer";
 import ChartsPanel from "./components/ChartsPanel";
+import SoundBridge from "./components/SoundBridge";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -67,6 +68,7 @@ export default function App() {
   const [lyricStatus, setLyricStatus] = useState(null);
   const [mixQueue, setMixQueue] = useState([]);
   const [mixLoading, setMixLoading] = useState(false);
+  const [bridgeLoading, setBridgeLoading] = useState(false);
   const [autoPlayToken, setAutoPlayToken] = useState(0);
   const [playbackHandoff, setPlaybackHandoff] = useState(null);
   const recommendationRequest = useRef(0);
@@ -134,6 +136,42 @@ export default function App() {
     if (nextMode === "personalized" && !user) { setAuthOpen(true); return; }
     setMode(nextMode);
     if (selected && !audioProfile) await recommend(selected, weights, nextMode);
+  }
+
+  async function buildBridge(start, destination, handoff) {
+    handlePreviewChange(null);
+    setMode("transition");
+    setSelected(start);
+    setRecommendations([]);
+    setAudioProfile(null);
+    setError("");
+    setLoading(true);
+    setMixLoading(true);
+    setBridgeLoading(true);
+    setPlaybackHandoff(handoff);
+    setMixQueue([start]);
+    setAutoPlayToken((token) => token + 1);
+    const requestId = ++recommendationRequest.current;
+    try {
+      const response = await getSoundBridge(start.track_id, destination.track_id);
+      if (requestId !== recommendationRequest.current) return;
+      const path = response.data.recommendations || [];
+      setRecommendations(path);
+      setMixQueue([start, ...path]);
+      if (user) getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
+    } catch (requestError) {
+      handoff?.audio.pause();
+      if (requestId !== recommendationRequest.current) return;
+      setPlaybackHandoff(null);
+      setMixQueue([start]);
+      setError(requestError.response?.data?.detail || "Cerum could not calculate this bridge. Try a different destination song.");
+    } finally {
+      if (requestId === recommendationRequest.current) {
+        setLoading(false);
+        setMixLoading(false);
+        setBridgeLoading(false);
+      }
+    }
   }
 
   async function analyze(file, title) {
@@ -219,7 +257,7 @@ export default function App() {
       <div className="flow-field" aria-hidden="true" />
       <motion.header className="app-header" initial={{ y: -64 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 160, damping: 24 }}>
         <a className="logo" href="#top" aria-label="Cerum home">Cerum</a>
-        <p className="header-manifesto">Sound has shape. Find its echo.</p>
+        <p className="header-manifesto">Acoustic recommendations and continuous mixes.</p>
         <nav aria-label="Account">
           {user ? <><button className="header-button" onClick={() => setLibraryOpen(true)}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <button className="header-button" onClick={() => setAuthOpen(true)}>Sign in</button>}
         </nav>
@@ -227,11 +265,7 @@ export default function App() {
 
       <section className="intro-section" id="top">
         <div className="hero-grid">
-          <motion.div className="hero-copy" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 86, damping: 20 }}>
-            <p className="kicker">01 / Acoustic discovery engine</p>
-            <h1>Don’t sort music.<br /><span>Feel its shape.</span></h1>
-            <p>Cerum hears rhythm, timbre, texture, dynamics and harmony—then finds the songs that live near the same feeling.</p>
-          </motion.div>
+          <SoundBridge building={bridgeLoading} onBuild={buildBridge} />
           <ChartsPanel onSelect={recommend} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} />
         </div>
         <motion.div className="search-stage" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 92, damping: 22, delay: .18 }}>

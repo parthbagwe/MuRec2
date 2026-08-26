@@ -49,6 +49,20 @@ export const getRecommendations = (track_id, k = 10, weights = null, mode = "sim
   ? edge("recommend", { track_id, k, weights, mode })
   : api.post("/recommend", { track_id, k, weights, mode });
 
+export const getSoundBridge = async (track_id, destination_track_id) => {
+  if (hostedApiEnabled) return edge("bridge", { track_id, destination_track_id, k: 5 });
+  const response = await api.post("/recommend", { track_id, k: 3, mode: "transition" });
+  const destination = await getTrack(destination_track_id);
+  return {
+    data: {
+      anchor: response.data.anchor,
+      destination: destination.data,
+      recommendations: [...response.data.recommendations.slice(0, 3), destination.data],
+      score_mode: "acoustic-bridge-fallback",
+    },
+  };
+};
+
 export const getSimilar = (track_id, k = 10) => hostedApiEnabled
   ? edge("similar", { track_id, k })
   : api.get(`/similar/${track_id}`, { params: { k } });

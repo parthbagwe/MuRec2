@@ -86,10 +86,24 @@ function cleanTrack(track: JsonRecord, fingerprint?: JsonRecord | null) {
     subgenre: signature,
     year: track.year,
     bpm: fingerprint?.profile?.bpm ?? null,
-    energy: null,
-    valence: null,
+    energy: fingerprint?.profile?.energy ?? null,
+    valence: fingerprint?.lyrics?.sentiment === undefined
+      ? null
+      : Math.max(0, Math.min(1, (Number(fingerprint.lyrics.sentiment) + 1) / 2)),
     popularity: null,
     timbre: fingerprint?.profile?.texture ?? null,
+    aggression: fingerprint?.profile?.aggression ?? null,
+    brightness: fingerprint?.profile?.brightness ?? null,
+    dynamic_range: fingerprint?.profile?.dynamic_range ?? null,
+    danceability: fingerprint?.profile?.danceability ?? null,
+    onset_density: fingerprint?.profile?.onset_density ?? null,
+    percussive_ratio: fingerprint?.profile?.percussive_ratio ?? null,
+    harmonic_ratio: fingerprint?.profile?.harmonic_ratio ?? null,
+    key: fingerprint?.profile?.key ?? null,
+    mode: fingerprint?.profile?.mode ?? null,
+    musical_key: fingerprint?.profile?.key
+      ? `${fingerprint.profile.key} ${fingerprint.profile.mode ?? ""}`.trim()
+      : null,
     primary_theme_pool: null,
     lyric_snippet: null,
     album: track.album,
@@ -425,6 +439,103 @@ async function chartTracks(input: JsonRecord) {
   return { country, updated_at: feed?.feed?.updated ?? new Date().toISOString(), tracks };
 }
 
+function transitionTrack(previous: JsonRecord, candidate: JsonRecord, anchor: JsonRecord, step: number, score?: number) {
+  const metrics = transitionMetrics(previous, candidate, anchor);
+  return {
+    ...cleanTrack(candidate.track, candidate),
+    audio_similarity: Number(metrics.parts[0].toFixed(4)),
+    timbre_similarity: Number(metrics.parts[1].toFixed(4)),
+    lyric_similarity: metrics.lyrics === null ? null : Number(metrics.lyrics.toFixed(4)),
+    collab_similarity: Number(metrics.parts[2].toFixed(4)),
+    hybrid_score: Number((score ?? metrics.score).toFixed(4)),
+    score_mode: "acoustic-bridge",
+    match_reasons: metrics.reasons,
+    transition_step: step,
+    transition_from: `${previous.track.title} — ${previous.track.artist}`,
+    transition_note: metrics.note,
+  };
+}
+
+async function bridge(input: JsonRecord, context: Awaited<ReturnType<typeof userContext>>) {
+  const library = await loadLibrary();
+  const anchor = library.find((item) => String(item.track_id) === String(input.track_id));
+  const destination = library.find((item) => String(item.track_id) === String(input.destination_track_id));
+  if (!anchor || !destination) throw new ApiError(404, "Both Sound Bridge tracks must have acoustic fingerprints");
+  if (String(anchor.track_id) === String(destination.track_id)) throw new ApiError(422, "Choose two different songs for a Sound Bridge");
+  if (!anchor.track.preview_url || !destination.track.preview_url) throw new ApiError(422, "Both Sound Bridge tracks need playable previews");
+
+  const usedTrackIds = new Set<string>([String(anchor.track_id), String(destination.track_id)]);
+  const usedRecordings = new Set<string>([
+    recordingIdentity(anchor.track.title, anchor.track.artist),
+    recordingIdentity(destination.track.title, destination.track.artist),
+  ]);
+  const usedArtists = new Set<string>([normalizedStyle(anchor.track.artist), normalizedStyle(destination.track.artist)]);
+  const intermediates: Array<{ row: JsonRecord; score: number }> = [];
+  let previous = anchor;
+
+  for (let step = 1; step <= 3; step += 1) {
+    const progress = step / 4;
+    const goalWeight = 0.22 + progress * 0.46;
+    const expectedEnergy = Number(anchor.profile.energy) * (1 - progress) + Number(destination.profile.energy) * progress;
+    const expectedBrightness = Number(anchor.profile.brightness) * (1 - progress) + Number(destination.profile.brightness) * progress;
+    const ranked = library.flatMap((candidate) => {
+      const recordingKey = recordingIdentity(candidate.track.title, candidate.track.artist);
+      if (!candidate.track.preview_url || usedTrackIds.has(String(candidate.track_id)) || usedRecordings.has(recordingKey)) return [];
+      const handoff = transitionMetrics(previous, candidate, anchor);
+      const arrival = transitionMetrics(candidate, destination, destination);
+      const energyTrajectory = Math.exp(-Math.abs(Number(candidate.profile.energy) - expectedEnergy) / 18);
+      const brightnessTrajectory = Math.exp(-Math.abs(Number(candidate.profile.brightness) - expectedBrightness) / 0.24);
+      let score = handoff.score * (1 - goalWeight) + arrival.score * goalWeight;
+      score = score * 0.84 + energyTrajectory * 0.10 + brightnessTrajectory * 0.06;
+      if (usedArtists.has(normalizedStyle(candidate.track.artist))) score *= 0.68;
+      return [{ candidate, recordingKey, score }];
+    }).sort((left, right) => right.score - left.score);
+    const next = ranked[0];
+    if (!next) break;
+    intermediates.push({ row: next.candidate, score: next.score });
+    usedTrackIds.add(String(next.candidate.track_id));
+    usedRecordings.add(next.recordingKey);
+    usedArtists.add(normalizedStyle(next.candidate.track.artist));
+    previous = next.candidate;
+  }
+
+  const recommendations = intermediates.map((item, index) => {
+    const prior = index === 0 ? anchor : intermediates[index - 1].row;
+    return transitionTrack(prior, item.row, anchor, index + 1, item.score);
+  });
+  recommendations.push(transitionTrack(previous, destination, anchor, recommendations.length + 1));
+
+  if (context) {
+    const { data: run, error } = await context.client.from("recommendation_runs").insert({
+      user_id: context.user.id,
+      anchor_track_id: String(anchor.track_id),
+      anchor_title: anchor.track.title,
+      anchor_artist: anchor.track.artist,
+      mode: "transition",
+      weights: { rhythm: 0.42, timbre: 0.25, harmony: 0.33, bridge_destination: String(destination.track_id) },
+    }).select("id").single();
+    if (!error && run) {
+      await context.client.from("recommendation_items").insert(recommendations.map((item, index) => ({
+        run_id: run.id,
+        track_id: item.track_id,
+        title: item.title,
+        artist: item.artist,
+        subgenre: item.subgenre,
+        rank: index + 1,
+        score: item.hybrid_score,
+      })));
+    }
+  }
+
+  return {
+    anchor: cleanTrack(anchor.track, anchor),
+    destination: cleanTrack(destination.track, destination),
+    recommendations,
+    score_mode: "acoustic-bridge",
+    total: recommendations.length,
+  };
+}
+
 async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof userContext>>) {
   const mode = String(input.mode ?? "similar");
   if (!(mode in modeWeights)) throw new ApiError(422, "Unknown recommendation mode");
@@ -676,6 +787,7 @@ async function handleAction(input: JsonRecord, request: Request) {
       dimensions: ["tempo", "intensity", "texture", "rhythm character", "harmonic character", "lyrical themes"],
     };
   }
+  if (action === "bridge") return bridge(input, context);
   if (action === "recommend" || action === "similar") return recommend({ ...input, mode: action === "similar" ? "similar" : input.mode }, context);
   if (action === "analyze") throw new ApiError(501, "Audio-file analysis currently requires the MuRec2 desktop backend. Search the hosted acoustic catalogue instead.");
 

@@ -23,6 +23,23 @@ function frameAt(profile, time) {
   return profile.frames[clamp(index, 0, profile.frames.length - 1)] || profile.frames[0];
 }
 
+export function samplePreviewProfile(profile, time = 0) {
+  if (!profile?.frames?.length) return null;
+  const position = clamp(time / profile.hopSeconds, 0, profile.frames.length - 1);
+  const first = profile.frames[Math.floor(position)] || profile.frames[0];
+  const second = profile.frames[Math.min(profile.frames.length - 1, Math.ceil(position))] || first;
+  const mix = position - Math.floor(position);
+  const interpolate = (name) => Number(first[name] ?? 0) + (Number(second[name] ?? 0) - Number(first[name] ?? 0)) * mix;
+  return {
+    level: interpolate("level"),
+    bass: interpolate("bass"),
+    brightness: interpolate("brightness"),
+    texture: interpolate("texture"),
+    transient: interpolate("onset"),
+    crest: interpolate("crest"),
+  };
+}
+
 function windowRms(profile, start, end) {
   let total = 0;
   let count = 0;
@@ -157,6 +174,8 @@ function analyzeDecodedBuffer(buffer) {
     let square = 0;
     let differenceSquare = 0;
     let lowSquare = 0;
+    let peak = 0;
+    let zeroCrossings = 0;
     let previousSample = mono[start];
     for (let offset = 0; offset < frameSize; offset += 1) {
       const sample = mono[start + offset];
@@ -164,6 +183,8 @@ function analyzeDecodedBuffer(buffer) {
       square += sample * sample;
       differenceSquare += difference * difference;
       lowSquare += bandEnergy[start + offset] * bandEnergy[start + offset];
+      peak = Math.max(peak, Math.abs(sample));
+      if ((sample >= 0) !== (previousSample >= 0)) zeroCrossings += 1;
       previousSample = sample;
     }
     const rms = Math.sqrt(square / frameSize);
@@ -176,6 +197,9 @@ function analyzeDecodedBuffer(buffer) {
       time: (start + frameSize / 2) / sampleRate,
       rms,
       lowRatio: clamp(low / Math.max(rms, 0.0001), 0, 1.5),
+      highRatio: clamp(high / Math.max(rms, 0.0001), 0, 2.5),
+      crestRaw: clamp(peak / Math.max(rms, 0.0001), 1, 12),
+      zeroCrossingRate: zeroCrossings / frameSize,
       onsetRaw,
       onset: 0,
     });
@@ -186,7 +210,17 @@ function analyzeDecodedBuffer(buffer) {
     previousLow = low;
   }
   const onsetCeiling = Math.max(0.001, percentile(rawOnsets, 0.94));
-  for (const frame of frames) frame.onset = clamp(frame.onsetRaw / onsetCeiling, 0, 1);
+  const levelCeiling = Math.max(0.001, percentile(frames.map((frame) => frame.rms), 0.94));
+  const brightnessFloor = percentile(frames.map((frame) => frame.highRatio), 0.12);
+  const brightnessCeiling = Math.max(brightnessFloor + 0.001, percentile(frames.map((frame) => frame.highRatio), 0.92));
+  for (const frame of frames) {
+    frame.onset = clamp(frame.onsetRaw / onsetCeiling, 0, 1);
+    frame.level = clamp(frame.rms / levelCeiling, 0, 1);
+    frame.bass = clamp(frame.lowRatio / 1.12, 0, 1);
+    frame.brightness = clamp((frame.highRatio - brightnessFloor) / (brightnessCeiling - brightnessFloor), 0, 1);
+    frame.crest = clamp((frame.crestRaw - 1) / 7, 0, 1);
+    frame.texture = clamp(frame.brightness * 0.58 + frame.zeroCrossingRate * 5.2 * 0.42, 0, 1);
+  }
   return {
     duration: buffer.duration,
     globalRms: Math.sqrt(totalSquare / Math.max(1, frames.length * frameSize)),
