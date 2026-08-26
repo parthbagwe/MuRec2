@@ -35,6 +35,8 @@ export default function ScoreBreakdown({ rec }) {
       <Bar label={labels[1]} value={rec.timbre_similarity ?? rec.lyric_similarity} color="#ff5aa5" />
       <Bar label={labels[2]} value={rec.collab_similarity} color="#6c57ff" />
       {Number.isFinite(rec.timbre_similarity) && Number.isFinite(rec.lyric_similarity) && <Bar label="lyrics" value={rec.lyric_similarity} color="#ff914d" />}
+      <Bar label="vibe" value={rec.vibe_similarity} color="#2bb673" />
+      <Bar label="genre" value={rec.genre_similarity} color="#50a7ff" />
     </div>
   );
 }

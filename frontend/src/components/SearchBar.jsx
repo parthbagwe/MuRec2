@@ -115,7 +115,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
         <div className="search-results">
           {results.map((track) => (
             <button key={track.track_id} onClick={() => select(track)}>
-              <span><strong>{track.title}</strong><small>{track.artist} · {track.subgenre || "audio analysis pending"}</small></span>
+              <span><strong>{track.title}</strong><small>{track.artist} · {track.provider_genre ? `${track.provider_genre} · ` : ""}{track.subgenre || "audio analysis pending"}</small></span>
               <em>{track.year}</em>
             </button>
           ))}

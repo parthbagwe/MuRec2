@@ -3,7 +3,7 @@ Pydantic models for FastAPI request validation and response serialisation.
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 
 class TrackResponse(BaseModel):
@@ -25,6 +25,9 @@ class TrackResponse(BaseModel):
     preview_url: Optional[str] = None
     external_url: Optional[str] = None
     source: Optional[str] = None
+    provider_genre: Optional[str] = None
+    provider_subgenre: Optional[str] = None
+    seed_genre: Optional[str] = None
     acoustic_signature: Optional[str] = None
     analysis_status: str = "pending"
 
@@ -45,6 +48,13 @@ class RecommendationResponse(BaseModel):
     preview_url: Optional[str] = None
     external_url: Optional[str] = None
     source: Optional[str] = None
+    provider_genre: Optional[str] = None
+    provider_subgenre: Optional[str] = None
+    seed_genre: Optional[str] = None
+    timbre_similarity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    vibe_similarity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    genre_similarity: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    genre_scope: Optional[str] = None
     score_mode: str = "hybrid"
     match_reasons: list[str] = Field(default_factory=list)
     transition_step: Optional[int] = None
@@ -57,6 +67,8 @@ class RecommendRequest(BaseModel):
     k: int = Field(default=10, ge=1, le=50)
     weights: Optional[dict[str, float]] = None
     mode: str = "similar"
+    genre_scope: Literal["strict", "nearby", "open"] = "nearby"
+    vibe_lock: bool = True
 
 
 class RecommendListResponse(BaseModel):

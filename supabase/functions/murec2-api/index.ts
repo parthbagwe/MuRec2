@@ -111,6 +111,9 @@ function cleanTrack(track: JsonRecord, fingerprint?: JsonRecord | null) {
     preview_url: track.preview_url,
     external_url: track.external_url,
     source: track.source ?? "Catalogue",
+    provider_genre: track.provider_genre ?? null,
+    provider_subgenre: track.provider_subgenre ?? null,
+    seed_genre: track.seed_genre ?? null,
     acoustic_signature: signature,
     analysis_status: signature ? "complete" : "pending",
     lyrics_available: Boolean(fingerprint?.lyrics?.confidence > 0),
@@ -224,6 +227,57 @@ function styleSimilarity(first: unknown, second: unknown) {
   return 0.04;
 }
 
+function primaryGenre(row: JsonRecord) {
+  return normalizedStyle(row.track?.provider_genre ?? row.provider_genre ?? row.track?.provider_subgenre ?? row.provider_subgenre);
+}
+
+function genreSimilarity(first: JsonRecord, second: JsonRecord) {
+  const firstPrimary = primaryGenre(first);
+  const secondPrimary = primaryGenre(second);
+  if (firstPrimary && firstPrimary === secondPrimary) return 1;
+  const firstSubgenre = normalizedStyle(first.track?.provider_subgenre ?? first.provider_subgenre ?? first.track?.seed_genre ?? first.seed_genre);
+  const secondSubgenre = normalizedStyle(second.track?.provider_subgenre ?? second.provider_subgenre ?? second.track?.seed_genre ?? second.seed_genre);
+  if (firstSubgenre && firstSubgenre === secondSubgenre) return 0.90;
+  const subgenreScore = styleSimilarity(firstSubgenre, secondSubgenre);
+  const primaryScore = styleSimilarity(firstPrimary, secondPrimary);
+  return Math.max(subgenreScore, primaryScore * 0.82);
+}
+
+function titleMood(row: JsonRecord) {
+  const value = normalizedStyle(`${row.track?.title ?? row.title ?? ""} ${row.track?.album ?? row.album ?? ""}`);
+  if (/\b(?:sad|cry|crying|tears?|heartbreak|broken|goodbye|alone|lonely|without you|miss you|lost love|when i was|no love|hate|hurt|pain|bek?hayali|bewafa|judaai?|tadap|dard|channa mereya|agar tum saath ho)\b/.test(value)) return -1;
+  if (/\b(?:happy|happiness|celebrate|celebration|party|dance|sunshine|beautiful|good time|one love|in love|love me|marry you|on top|victory|alive|freedom)\b/.test(value)) return 1;
+  return null;
+}
+
+function vibeSimilarity(first: JsonRecord, second: JsonRecord) {
+  const left = first.profile;
+  const right = second.profile;
+  const acoustic = meanScaledDifference(
+    [left.energy, left.danceability, left.brightness, left.aggression, left.dynamic_range, left.onset_density, left.percussive_ratio, left.harmonic_ratio],
+    [right.energy, right.danceability, right.brightness, right.aggression, right.dynamic_range, right.onset_density, right.percussive_ratio, right.harmonic_ratio],
+    [38, 0.45, 0.45, 0.45, 0.55, 3.5, 0.45, 0.50],
+    2.35,
+  );
+  const character = (
+    Number(left.intensity === right.intensity) +
+    Number(left.rhythm_character === right.rhythm_character) +
+    Number(left.tempo_band === right.tempo_band)
+  ) / 3;
+  const leftMood = titleMood(first);
+  const rightMood = titleMood(second);
+  const title = leftMood === null || rightMood === null ? null : leftMood === rightMood ? 1 : 0;
+  const lyric = lyricSimilarity(first, second);
+  const semanticSignals = [title, lyric].filter((value): value is number => value !== null);
+  const semantic = semanticSignals.length
+    ? semanticSignals.reduce((sum, value) => sum + value, 0) / semanticSignals.length
+    : null;
+  const value = semantic === null
+    ? 0.78 * acoustic + 0.22 * character
+    : 0.62 * acoustic + 0.18 * character + 0.20 * semantic;
+  return { value: Math.max(0, Math.min(1, value)), title, acoustic };
+}
+
 function weightedScore(parts: [number, number, number], weights: [number, number, number]) {
   return weights[0] * parts[0] + weights[1] * parts[1] + weights[2] * parts[2];
 }
@@ -298,16 +352,19 @@ function transitionMetrics(previous: JsonRecord, candidate: JsonRecord, anchor: 
   );
   const currentStyle = styleSimilarity(previous.track.provider_subgenre, candidate.track.provider_subgenre);
   const anchorStyle = styleSimilarity(anchor.track.provider_subgenre, candidate.track.provider_subgenre);
+  const genre = genreSimilarity(previous, candidate);
+  const vibe = vibeSimilarity(previous, candidate).value;
   const lyrics = lyricSimilarity(previous, candidate);
   const base = lyrics === null
-    ? 0.36 * tempo + 0.30 * harmony + 0.20 * timbre + 0.14 * energy
-    : 0.34 * tempo + 0.28 * harmony + 0.18 * timbre + 0.12 * energy + 0.08 * lyrics;
-  const score = base * (0.78 + 0.22 * currentStyle) * (0.90 + 0.10 * anchorStyle);
+    ? 0.31 * tempo + 0.27 * harmony + 0.17 * timbre + 0.11 * energy + 0.14 * vibe
+    : 0.29 * tempo + 0.25 * harmony + 0.16 * timbre + 0.10 * energy + 0.12 * vibe + 0.08 * lyrics;
+  const score = base * (0.80 + 0.12 * currentStyle + 0.08 * genre) * (0.92 + 0.08 * anchorStyle);
   const reasons: string[] = [];
   if (tempoDifference <= 5) reasons.push(`${Math.round(previousProfile.bpm)}→${Math.round(candidateProfile.bpm)} BPM`);
   if (key >= 0.90) reasons.push(`${previousProfile.key} ${previousProfile.mode}→${candidateProfile.key} ${candidateProfile.mode}`);
   if (energy >= 0.88) reasons.push("steady energy handoff");
   if (timbre >= 0.86) reasons.push("matched texture");
+  if (vibe >= 0.86) reasons.push("same vibe");
   if (lyrics !== null && lyrics >= 0.82) reasons.push("lyrical mood continuity");
   if (!reasons.length) reasons.push("balanced tempo and tone");
   return {
@@ -315,6 +372,8 @@ function transitionMetrics(previous: JsonRecord, candidate: JsonRecord, anchor: 
     score: Math.max(0, Math.min(1, score)),
     reasons: reasons.slice(0, 3),
     lyrics,
+    vibe,
+    genre,
     note: `${Math.round(previousProfile.bpm)}→${Math.round(candidateProfile.bpm)} BPM · ${previousProfile.key} ${previousProfile.mode}→${candidateProfile.key} ${candidateProfile.mode}`,
   };
 }
@@ -446,6 +505,8 @@ function transitionTrack(previous: JsonRecord, candidate: JsonRecord, anchor: Js
     audio_similarity: Number(metrics.parts[0].toFixed(4)),
     timbre_similarity: Number(metrics.parts[1].toFixed(4)),
     lyric_similarity: metrics.lyrics === null ? null : Number(metrics.lyrics.toFixed(4)),
+    vibe_similarity: Number(metrics.vibe.toFixed(4)),
+    genre_similarity: Number(metrics.genre.toFixed(4)),
     collab_similarity: Number(metrics.parts[2].toFixed(4)),
     hybrid_score: Number((score ?? metrics.score).toFixed(4)),
     score_mode: "acoustic-bridge",
@@ -540,6 +601,8 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   const mode = String(input.mode ?? "similar");
   if (!(mode in modeWeights)) throw new ApiError(422, "Unknown recommendation mode");
   if (mode === "personalized" && !context) throw new ApiError(401, "Sign in to use personalized recommendations");
+  const genreScope = ["strict", "nearby", "open"].includes(String(input.genre_scope)) ? String(input.genre_scope) : "nearby";
+  const vibeLock = input.vibe_lock !== false;
   const k = Math.min(50, Math.max(1, Number(input.k ?? 12)));
   const library = await loadLibrary();
   const anchor = library.find((item) => String(item.track_id) === String(input.track_id));
@@ -586,16 +649,23 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
         const recordingKey = recordingIdentity(candidate.track.title, candidate.track.artist);
         if (usedTrackIds.has(String(candidate.track_id)) || usedRecordings.has(recordingKey)) return [];
         if (!candidate.track.preview_url) return [];
+        const anchorGenre = genreSimilarity(anchor, candidate);
+        if (genreScope === "strict" && primaryGenre(anchor) !== primaryGenre(candidate)) return [];
+        if (genreScope === "nearby" && anchorGenre < 0.10) return [];
         const tempo = Math.exp(-transitionTempoDifference(previous.profile.bpm, candidate.profile.bpm) / 12);
         const key = keyCompatibility(previous, candidate);
         const style = styleSimilarity(previous.track.provider_subgenre, candidate.track.provider_subgenre);
-        return [{ candidate, recordingKey, roughScore: 0.50 * tempo + 0.32 * key + 0.18 * style }];
+        return [{ candidate, recordingKey, roughScore: 0.47 * tempo + 0.30 * key + 0.13 * style + 0.10 * anchorGenre }];
       }).sort((left, right) => right.roughScore - left.roughScore).slice(0, 520);
       const ranked = shortlist.map(({ candidate, recordingKey }) => {
         const metrics = transitionMetrics(previous, candidate, anchor);
         let score = metrics.score;
+        const anchorVibe = vibeSimilarity(anchor, candidate).value;
+        const genre = genreSimilarity(anchor, candidate);
+        if (vibeLock) score *= 0.58 + 0.42 * anchorVibe;
+        score *= genreScope === "open" ? 0.88 + 0.12 * genre : 0.60 + 0.40 * genre;
         if (usedArtists.has(normalizedStyle(candidate.track.artist))) score *= 0.62;
-        return { candidate, recordingKey, metrics, score };
+        return { candidate, recordingKey, metrics, score, anchorVibe, genre };
       }).sort((left, right) => right.score - left.score);
       const next = ranked[0];
       if (!next) break;
@@ -604,6 +674,8 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
         audio_similarity: Number(next.metrics.parts[0].toFixed(4)),
         timbre_similarity: Number(next.metrics.parts[1].toFixed(4)),
         lyric_similarity: next.metrics.lyrics === null ? null : Number(next.metrics.lyrics.toFixed(4)),
+        vibe_similarity: Number(next.anchorVibe.toFixed(4)),
+        genre_similarity: Number(next.genre.toFixed(4)),
         collab_similarity: Number(next.metrics.parts[2].toFixed(4)),
         hybrid_score: Number(next.score.toFixed(4)),
         score_mode: "acoustic-transition",
@@ -620,45 +692,62 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
     recommendations = chain;
   } else {
     const scored = library.flatMap((candidate) => {
-    if (candidate.track_id === anchor.track_id) return [];
-    if (recordingIdentity(candidate.track.title, candidate.track.artist) === recordingIdentity(anchor.track.title, anchor.track.artist)) return [];
-    let parts = components(anchor, candidate);
-    if (mode === "personalized" && positiveFingerprints.length) {
-      const taste = positiveFingerprints.map((positive) => components(positive, candidate));
-      const best = taste.sort((left, right) => weightedScore(right, chosenWeights) - weightedScore(left, chosenWeights))[0];
-      parts = [
-        0.65 * parts[0] + 0.35 * best[0],
-        0.65 * parts[1] + 0.35 * best[1],
-        0.65 * parts[2] + 0.35 * best[2],
-      ] as [number, number, number];
-    }
-    const [rhythm, timbre, harmony] = parts;
-    const acousticScore = weightedScore(parts, chosenWeights);
-    const lyrics = lyricSimilarity(anchor, candidate);
-    const lyricWeight = lyricWeights[mode];
-    const base = lyrics === null
-      ? acousticScore
-      : (1 - lyricWeight) * acousticScore + lyricWeight * lyrics;
-    const style = styleSimilarity(anchor.track.provider_subgenre, candidate.track.provider_subgenre);
-    let total = base * (0.52 + 0.48 * style);
-    if (mode === "discover" && normalizedStyle(candidate.track.artist) === normalizedStyle(anchor.track.artist)) total *= 0.72;
-    if (seen.has(String(candidate.track_id))) total *= mode === "discover" ? 0.40 : 0.76;
-    if (negativeFingerprints.length) {
-      const negativeAffinity = Math.max(...negativeFingerprints.map((negative) => weightedScore(components(negative, candidate), chosenWeights)));
-      if (negativeAffinity > 0.72) total *= 1 - 0.45 * Math.min(1, (negativeAffinity - 0.72) / 0.28);
-    }
-    return [{
-      ...cleanTrack(candidate.track, candidate),
-      audio_similarity: Number(rhythm.toFixed(4)),
-      timbre_similarity: Number(timbre.toFixed(4)),
-      lyric_similarity: lyrics === null ? null : Number(lyrics.toFixed(4)),
-      collab_similarity: Number(harmony.toFixed(4)),
-      hybrid_score: Number(Math.max(0, Math.min(1, total)).toFixed(4)),
-      score_mode: `acoustic-fingerprint-${mode}`,
-      match_reasons: lyrics !== null && lyrics >= 0.82
-        ? [...matchReasons(anchor, candidate, parts), "related lyrical themes"].slice(0, 3)
-        : matchReasons(anchor, candidate, parts),
-    }];
+      if (candidate.track_id === anchor.track_id) return [];
+      if (recordingIdentity(candidate.track.title, candidate.track.artist) === recordingIdentity(anchor.track.title, anchor.track.artist)) return [];
+      const genre = genreSimilarity(anchor, candidate);
+      if (genreScope === "strict" && primaryGenre(anchor) !== primaryGenre(candidate)) return [];
+      if (genreScope === "nearby" && genre < 0.10) return [];
+      let parts = components(anchor, candidate);
+      if (mode === "personalized" && positiveFingerprints.length) {
+        const taste = positiveFingerprints.map((positive) => components(positive, candidate));
+        const best = taste.sort((left, right) => weightedScore(right, chosenWeights) - weightedScore(left, chosenWeights))[0];
+        parts = [
+          0.65 * parts[0] + 0.35 * best[0],
+          0.65 * parts[1] + 0.35 * best[1],
+          0.65 * parts[2] + 0.35 * best[2],
+        ] as [number, number, number];
+      }
+      const [rhythm, timbre, harmony] = parts;
+      const acousticScore = weightedScore(parts, chosenWeights);
+      const lyrics = lyricSimilarity(anchor, candidate);
+      const vibe = vibeSimilarity(anchor, candidate);
+      const lyricWeight = lyricWeights[mode];
+      let base = lyrics === null
+        ? acousticScore
+        : (1 - lyricWeight) * acousticScore + lyricWeight * lyrics;
+      if (mode === "rhythm") base = 0.72 * rhythm + 0.12 * vibe.value + 0.10 * harmony + 0.06 * timbre;
+      if (mode === "timbre") base = 0.72 * timbre + 0.12 * vibe.value + 0.10 * harmony + 0.06 * rhythm;
+      if (mode === "discover") {
+        const idHash = [...String(candidate.track_id)].reduce((value, character) => (value * 31 + character.charCodeAt(0)) % 997, 7) / 997;
+        base = 0.42 * acousticScore + 0.30 * vibe.value + 0.18 * genre + 0.10 * idHash;
+      }
+      const genreFactor = genreScope === "open" ? 0.86 + 0.14 * genre : 0.56 + 0.44 * genre;
+      const vibeFactor = vibeLock ? 0.42 + 0.58 * vibe.value : 1;
+      let total = base * genreFactor * vibeFactor;
+      if (vibe.title === 0) total *= 0.52;
+      if (mode === "discover" && normalizedStyle(candidate.track.artist) === normalizedStyle(anchor.track.artist)) total *= 0.58;
+      if (seen.has(String(candidate.track_id))) total *= mode === "discover" ? 0.36 : 0.76;
+      if (negativeFingerprints.length) {
+        const negativeAffinity = Math.max(...negativeFingerprints.map((negative) => weightedScore(components(negative, candidate), chosenWeights)));
+        if (negativeAffinity > 0.72) total *= 1 - 0.45 * Math.min(1, (negativeAffinity - 0.72) / 0.28);
+      }
+      const reasons = matchReasons(anchor, candidate, parts);
+      if (vibe.value >= 0.78) reasons.unshift("same vibe");
+      if (genre >= 0.90) reasons.unshift(`same ${primaryGenre(anchor) || "genre"} lane`);
+      if (lyrics !== null && lyrics >= 0.82) reasons.unshift("related lyrical themes");
+      return [{
+        ...cleanTrack(candidate.track, candidate),
+        audio_similarity: Number(rhythm.toFixed(4)),
+        timbre_similarity: Number(timbre.toFixed(4)),
+        lyric_similarity: lyrics === null ? null : Number(lyrics.toFixed(4)),
+        collab_similarity: Number(harmony.toFixed(4)),
+        vibe_similarity: Number(vibe.value.toFixed(4)),
+        genre_similarity: Number(genre.toFixed(4)),
+        genre_scope: genreScope,
+        hybrid_score: Number(Math.max(0, Math.min(1, total)).toFixed(4)),
+        score_mode: `acoustic-fingerprint-${mode}`,
+        match_reasons: [...new Set(reasons)].slice(0, 3),
+      }];
     }).sort((a, b) => b.hybrid_score - a.hybrid_score);
 
     const recordings = new Set<string>();
@@ -689,7 +778,7 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   }
 
   if (context) {
-    const weights = { rhythm: chosenWeights[0], timbre: chosenWeights[1], harmony: chosenWeights[2], lyrics: lyricWeights[mode] };
+    const weights = { rhythm: chosenWeights[0], timbre: chosenWeights[1], harmony: chosenWeights[2], lyrics: lyricWeights[mode], vibe_lock: vibeLock, genre_scope: genreScope };
     const { data: run, error } = await context.client.from("recommendation_runs").insert({
       user_id: context.user.id,
       anchor_track_id: String(anchor.track_id),
@@ -714,7 +803,7 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   return {
     anchor: cleanTrack(anchor.track, anchor),
     recommendations,
-    weights_used: { rhythm: chosenWeights[0], timbre: chosenWeights[1], harmony: chosenWeights[2], lyrics: lyricWeights[mode] },
+    weights_used: { rhythm: chosenWeights[0], timbre: chosenWeights[1], harmony: chosenWeights[2], lyrics: lyricWeights[mode], vibe_lock: vibeLock, genre_scope: genreScope },
     total: recommendations.length,
   };
 }

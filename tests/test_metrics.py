@@ -2,7 +2,7 @@ import numpy as np
 
 from src.evaluation.metrics import coverage, intra_list_diversity, ndcg_at_k, precision_at_k, recall_at_k
 from src.subgenres import infer_subgenre, subgenre_similarity
-from src.acoustic_index import AcousticIndex, _recording_identity
+from src.acoustic_index import AcousticIndex, _genre_similarity, _recording_identity
 
 
 def test_ranking_metrics():
@@ -63,3 +63,22 @@ def test_transition_scoring_rewards_mixable_tempo_and_key():
     assert AcousticIndex.key_compatibility(anchor, compatible) > AcousticIndex.key_compatibility(anchor, incompatible)
     assert compatible_metrics["score"] > incompatible_metrics["score"]
     assert "BPM" in compatible_metrics["note"]
+
+
+def test_vibe_lock_detects_opposed_title_mood_even_when_audio_matches():
+    fingerprint = _fingerprint(144, "B", "minor", 40)
+    anchor = {"title": "One Love", "album": "One Love"}
+    cheerful = {"title": "Love Me", "album": "Good Time"}
+    heartbreak = {"title": "When I Was Your Man", "album": "Unorthodox Jukebox"}
+    cheerful_vibe = AcousticIndex.vibe_similarity(fingerprint, fingerprint, anchor, cheerful)
+    heartbreak_vibe = AcousticIndex.vibe_similarity(fingerprint, fingerprint, anchor, heartbreak)
+    assert cheerful_vibe["title"] == 1
+    assert heartbreak_vibe["title"] == 0
+    assert cheerful_vibe["value"] > heartbreak_vibe["value"]
+
+
+def test_primary_genre_distinguishes_pop_from_bollywood_even_with_pop_subgenre():
+    pop = {"provider_genre": "Pop", "provider_subgenre": "pop"}
+    bollywood = {"provider_genre": "Bollywood", "provider_subgenre": "pop"}
+    assert _genre_similarity(pop, pop) == 1
+    assert _genre_similarity(pop, bollywood) < 1

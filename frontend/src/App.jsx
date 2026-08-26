@@ -9,6 +9,7 @@ import TrackPreview from "./components/TrackPreview";
 import MixPlayer from "./components/MixPlayer";
 import ChartsPanel from "./components/ChartsPanel";
 import SoundBridge from "./components/SoundBridge";
+import GenreGate from "./components/GenreGate";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -69,6 +70,9 @@ export default function App() {
   const [mixQueue, setMixQueue] = useState([]);
   const [mixLoading, setMixLoading] = useState(false);
   const [bridgeLoading, setBridgeLoading] = useState(false);
+  const [genreScope, setGenreScope] = useState(null);
+  const [genrePrompt, setGenrePrompt] = useState(null);
+  const [modeFeedback, setModeFeedback] = useState("");
   const [autoPlayToken, setAutoPlayToken] = useState(0);
   const [playbackHandoff, setPlaybackHandoff] = useState(null);
   const recommendationRequest = useRef(0);
@@ -97,27 +101,42 @@ export default function App() {
     }
   }
 
-  async function recommend(track, nextWeights = weights, nextMode = mode, handoff = null) {
-    if (nextMode === "personalized" && !user) {
-      handoff?.audio.pause();
-      setAuthOpen(true);
-      return;
-    }
+  function stageSelection(track, handoff = null) {
     handlePreviewChange(null);
     setSelected(track);
-    setLoading(true);
+    setRecommendations([]);
     setError("");
     setAudioProfile(null);
     setPlaybackHandoff(handoff);
     setMixQueue([track]);
     setAutoPlayToken((token) => token + 1);
+  }
+
+  function requestGenreChoice(track, handoff = null) {
+    stageSelection(track, handoff);
+    setGenreScope(null);
+    setModeFeedback("Choose a genre range to unlock suggestions");
+    setGenrePrompt({ track, handoff });
+  }
+
+  async function recommend(track, nextWeights = weights, nextMode = mode, handoff = null, nextGenreScope = genreScope || "nearby", restartPlayback = true) {
+    if (nextMode === "personalized" && !user) {
+      if (restartPlayback) handoff?.audio.pause();
+      setAuthOpen(true);
+      return;
+    }
+    if (restartPlayback) stageSelection(track, handoff);
+    else setSelected(track);
+    setLoading(true);
+    setError("");
     setMixLoading(true);
+    setModeFeedback(`Re-ranking by ${MODES.find((item) => item.id === nextMode)?.label || nextMode}`);
     const requestId = ++recommendationRequest.current;
     try {
-      const mixPromise = getRecommendations(track.track_id, 5, nextWeights, "transition");
+      const mixPromise = getRecommendations(track.track_id, 5, nextWeights, "transition", nextGenreScope, true);
       const recommendationPromise = nextMode === "transition"
         ? mixPromise
-        : getRecommendations(track.track_id, 12, nextWeights, nextMode);
+        : getRecommendations(track.track_id, 12, nextWeights, nextMode, nextGenreScope, true);
       const [recommendationResult, mixResult] = await Promise.allSettled([recommendationPromise, mixPromise]);
       if (requestId !== recommendationRequest.current) return;
       if (mixResult.status === "fulfilled") setMixQueue([track, ...mixResult.value.data.recommendations.slice(0, 5)]);
@@ -128,18 +147,28 @@ export default function App() {
       setRecommendations([]);
       setError(requestError.response?.data?.detail || "The API is unavailable. Run start-backend.cmd and try again.");
     } finally {
-      if (requestId === recommendationRequest.current) { setLoading(false); setMixLoading(false); }
+      if (requestId === recommendationRequest.current) { setLoading(false); setMixLoading(false); setModeFeedback(""); }
     }
+  }
+
+  async function confirmGenreScope(nextScope) {
+    const pending = genrePrompt;
+    if (!pending) return;
+    setGenreScope(nextScope);
+    setGenrePrompt(null);
+    await recommend(pending.track, weights, mode, pending.handoff, nextScope, false);
   }
 
   async function chooseMode(nextMode) {
     if (nextMode === "personalized" && !user) { setAuthOpen(true); return; }
     setMode(nextMode);
-    if (selected && !audioProfile) await recommend(selected, weights, nextMode);
+    if (selected && !audioProfile && !genrePrompt) await recommend(selected, weights, nextMode, null, genreScope || "nearby", false);
   }
 
   async function buildBridge(start, destination, handoff) {
     handlePreviewChange(null);
+    setGenrePrompt(null);
+    setGenreScope("open");
     setMode("transition");
     setSelected(start);
     setRecommendations([]);
@@ -181,6 +210,7 @@ export default function App() {
     try {
       const response = await analyzeUnknown(file, title, 12);
       setSelected(response.data.anchor);
+      setGenreScope("nearby");
       setRecommendations(response.data.recommendations);
       setMixQueue([response.data.anchor, ...response.data.recommendations.filter((track) => track.preview_url).slice(0, 5)]);
       setAutoPlayToken((token) => token + 1);
@@ -214,7 +244,7 @@ export default function App() {
   async function signOut() {
     await logout().catch(() => {});
     setUser(null); setFavorites([]); setHistory([]); setLibraryOpen(false);
-    setMode("similar"); setSelected(null); setRecommendations([]); setAudioProfile(null); setError("");
+    setMode("similar"); setSelected(null); setRecommendations([]); setAudioProfile(null); setError(""); setGenreScope(null); setGenrePrompt(null);
   }
 
   function handleInteraction(track, eventType) { if (user) recordEvent(track.track_id, eventType).catch(() => {}); }
@@ -266,11 +296,11 @@ export default function App() {
       <section className="intro-section" id="top">
         <div className="hero-grid">
           <SoundBridge building={bridgeLoading} onBuild={buildBridge} />
-          <ChartsPanel onSelect={recommend} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} />
+          <ChartsPanel onSelect={requestGenreChoice} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} />
         </div>
         <motion.div className="search-stage" initial={{ opacity: 0, x: -120 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 92, damping: 22, delay: .18 }}>
           <p className="search-label">Start with one song</p>
-          <SearchBar onSelect={(track, handoff) => recommend(track, weights, mode, handoff)} onAnalyze={analyze} analyzing={analyzing} />
+          <SearchBar onSelect={requestGenreChoice} onAnalyze={analyze} analyzing={analyzing} />
           {indexStatus && <p className="index-status"><span className={indexStatus.building ? "status-dot building" : "status-dot"} />{indexStatus.indexed.toLocaleString()} / {indexStatus.total.toLocaleString()} acoustic fingerprints ready{lyricStatus ? ` · ${lyricStatus.analyzed.toLocaleString()} licensed lyric maps ready` : ""}</p>}
         </motion.div>
       </section>
@@ -285,8 +315,9 @@ export default function App() {
         <motion.div className="mode-section" initial={{ opacity: 0, x: -110 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .18 }} transition={{ type: "spring", stiffness: 78, damping: 20 }}>
           <div className="section-title"><p className="kicker">02 / Recommendation path</p><h2>Choose how<br />to move.</h2></div>
           <div className="mode-selector">
-            {MODES.map((item, index) => <motion.button key={item.id} className={mode === item.id ? "active" : ""} onClick={() => chooseMode(item.id)} whileHover={{ y: -4 }} whileTap={{ scale: .98 }}><em>{String(index + 1).padStart(2, "0")}</em><strong>{item.label}{item.id === "personalized" && !user ? " · sign in" : ""}</strong><span>{item.description}</span></motion.button>)}
+            {MODES.map((item, index) => <motion.button key={item.id} className={mode === item.id ? "active" : ""} aria-pressed={mode === item.id} onClick={() => chooseMode(item.id)} whileHover={{ y: -4 }} whileTap={{ scale: .98 }}><em>{String(index + 1).padStart(2, "0")}</em><strong>{item.label}{item.id === "personalized" && !user ? " · sign in" : ""}</strong><span>{item.description}</span></motion.button>)}
           </div>
+          <p className="mode-feedback" role="status" aria-live="polite">{modeFeedback}</p>
         </motion.div>
 
         <motion.div className="controls-card" initial={{ opacity: 0, x: 110 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .18 }} transition={{ type: "spring", stiffness: 78, damping: 20 }}>
@@ -299,7 +330,10 @@ export default function App() {
           <div className="sliders">
             {Object.entries(weights).map(([name, value]) => <label key={name}><span>{weightLabels[name]}<strong>{Math.round(value * 100)}%</strong></span><input type="range" min="0" max="1" step="0.05" value={value} disabled={mode !== "similar"} onChange={(event) => updateWeight(name, event.target.value)} /></label>)}
           </div>
-          <button className="primary-button" disabled={!selected || loading || Boolean(audioProfile)} onClick={() => recommend(selected)}>{loading ? "Finding matches…" : audioProfile ? "Acoustic analysis" : "Recalculate"}</button>
+          <div className="recommendation-actions">
+            {selected && <div className="preference-locks"><span>Vibe locked</span><button onClick={() => setGenrePrompt({ track: selected, handoff: null })}>Genre · {genreScope || "choose"}</button></div>}
+            <button className="primary-button" disabled={!selected || loading || Boolean(audioProfile) || !genreScope} onClick={() => recommend(selected, weights, mode, null, genreScope, false)}>{loading ? "Finding matches…" : audioProfile ? "Acoustic analysis" : genreScope ? "Recalculate" : "Choose genre first"}</button>
+          </div>
         </motion.div>
 
         {mode === "transition" && selected && <div className="transition-explainer"><strong>Your starting song is track 01.</strong><span>Cerum chooses five playable follow-ups in order. Every handoff is scored against the song immediately before it, while the original sound keeps the sequence from drifting.</span></div>}
@@ -310,13 +344,14 @@ export default function App() {
 
         <motion.div className="results-heading" initial={{ opacity: 0, x: -90 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">04 / {mode === "transition" ? "Ordered transition path" : "Ranked suggestions"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} sonic neighbours`) : "Your next sound starts here."}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : `${scoreMode.replace("metadata-", "").replace("metadata", "closest").replace("acoustic-profile", "acoustic")} model`}</p>}</motion.div>
         <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
-          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); recommend(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
+          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); requestGenreChoice(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
         </div>
       </section>
 
       <footer><span>Cerum · Acoustic scoring with fine-style guardrails · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
+      <GenreGate track={genrePrompt?.track} onChoose={confirmGenreScope} onCancel={() => setGenrePrompt(null)} />
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
-      <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={(track) => recommend(track)} />
+      <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={requestGenreChoice} />
       <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} playbackHandoff={playbackHandoff} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
     </main>
   );

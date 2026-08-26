@@ -48,6 +48,42 @@ def _recording_identity(title: object, artist: object) -> tuple[str, str]:
     return title_key, artist_key
 
 
+def _normalized(value: object) -> str:
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return ""
+    return str(value).casefold().strip()
+
+
+def _primary_genre(row: dict) -> str:
+    for key in ("provider_genre", "genre", "provider_subgenre", "subgenre"):
+        value = _normalized(row.get(key))
+        if value and value != "murec2 acoustic":
+            return value
+    return ""
+
+
+def _genre_similarity(first: dict, second: dict) -> float:
+    first_primary, second_primary = _primary_genre(first), _primary_genre(second)
+    if first_primary and first_primary == second_primary:
+        return 1.0
+    first_subgenre = _normalized(first.get("provider_subgenre") or first.get("subgenre") or first.get("seed_genre"))
+    second_subgenre = _normalized(second.get("provider_subgenre") or second.get("subgenre") or second.get("seed_genre"))
+    if first_subgenre and first_subgenre == second_subgenre:
+        return .90
+    return max(subgenre_similarity(first_subgenre, second_subgenre), .82 * subgenre_similarity(first_primary, second_primary))
+
+
+def _title_mood(row: dict) -> int | None:
+    value = _normalized(f"{row.get('title', '')} {row.get('album', '')}")
+    negative = r"\b(?:sad|cry|crying|tears?|heartbreak|broken|goodbye|alone|lonely|without you|miss you|lost love|when i was|no love|hate|hurt|pain|bek?hayali|bewafa|judaai?|tadap|dard|channa mereya|agar tum saath ho)\b"
+    positive = r"\b(?:happy|happiness|celebrate|celebration|party|dance|sunshine|beautiful|good time|one love|in love|love me|marry you|on top|victory|alive|freedom)\b"
+    if re.search(negative, value):
+        return -1
+    if re.search(positive, value):
+        return 1
+    return None
+
+
 class AcousticIndex:
     def __init__(self, path: Path = INDEX_PATH):
         self.path = path
@@ -276,6 +312,24 @@ class AcousticIndex:
         harmony = float(np.clip(.65 * chroma_similarity + .35 * harmonic_profile, 0, 1))
         return rhythm, timbre, harmony
 
+    @classmethod
+    def vibe_similarity(cls, first: dict, second: dict, first_row: dict, second_row: dict) -> dict:
+        a, b = first["profile"], second["profile"]
+        acoustic = cls._bounded_similarity(
+            np.array([a["energy"], a["danceability"], a["brightness"], a["aggression"], a["dynamic_range"], a["onset_density"], a["percussive_ratio"], a["harmonic_ratio"]]),
+            np.array([b["energy"], b["danceability"], b["brightness"], b["aggression"], b["dynamic_range"], b["onset_density"], b["percussive_ratio"], b["harmonic_ratio"]]),
+            np.array([38, .45, .45, .45, .55, 3.5, .45, .50]), 2.35,
+        )
+        character = np.mean([
+            a.get("intensity") == b.get("intensity"),
+            a.get("rhythm_character") == b.get("rhythm_character"),
+            a.get("tempo_band") == b.get("tempo_band"),
+        ])
+        first_mood, second_mood = _title_mood(first_row), _title_mood(second_row)
+        title = None if first_mood is None or second_mood is None else float(first_mood == second_mood)
+        value = .78 * acoustic + .22 * character if title is None else .70 * acoustic + .18 * character + .12 * title
+        return {"value": float(np.clip(value, 0, 1)), "title": title, "acoustic": acoustic}
+
     @staticmethod
     def transition_tempo_difference(first_bpm: float, second_bpm: float) -> float:
         return min(
@@ -349,6 +403,7 @@ class AcousticIndex:
     @classmethod
     def transition_recommendations(
         cls, anchor: dict, anchor_fp: dict, indexed: dict, rows: dict, k: int,
+        genre_scope: str = "nearby", vibe_lock: bool = True,
     ) -> list[dict]:
         anchor_id = str(anchor["track_id"])
         used_ids = {anchor_id}
@@ -366,6 +421,11 @@ class AcousticIndex:
                 preview_url = row.get("preview_url")
                 if recording_key in used_recordings or not isinstance(preview_url, str) or not preview_url.strip():
                     continue
+                genre = _genre_similarity(anchor, row)
+                if genre_scope == "strict" and _primary_genre(anchor) != _primary_genre(row):
+                    continue
+                if genre_scope == "nearby" and genre < .10:
+                    continue
                 tempo = math.exp(-cls.transition_tempo_difference(previous_fp["profile"]["bpm"], candidate_fp["profile"]["bpm"]) / 12)
                 key = cls.key_compatibility(previous_fp, candidate_fp)
                 style = subgenre_similarity(previous_row.get("subgenre", ""), row.get("subgenre", ""))
@@ -374,23 +434,32 @@ class AcousticIndex:
             for _, track_id, row, candidate_fp, recording_key in sorted(shortlist, reverse=True, key=lambda item: item[0])[:520]:
                 metrics = cls.transition_metrics(previous_fp, candidate_fp, anchor_fp, previous_row, row, anchor)
                 score = metrics["score"]
+                genre = _genre_similarity(anchor, row)
+                vibe = cls.vibe_similarity(anchor_fp, candidate_fp, anchor, row)
+                if vibe_lock:
+                    score *= .58 + .42 * vibe["value"]
+                score *= (.88 + .12 * genre) if genre_scope == "open" else (.60 + .40 * genre)
                 artist_key = str(row.get("artist", "")).casefold().strip()
                 if artist_key in used_artists:
                     score *= .62
-                ranked.append((score, track_id, row, candidate_fp, recording_key, artist_key, metrics))
+                ranked.append((score, track_id, row, candidate_fp, recording_key, artist_key, metrics, genre, vibe))
             if not ranked:
                 break
-            score, track_id, row, candidate_fp, recording_key, artist_key, metrics = max(ranked, key=lambda item: item[0])
+            score, track_id, row, candidate_fp, recording_key, artist_key, metrics, genre, vibe = max(ranked, key=lambda item: item[0])
             tempo, timbre, harmony = metrics["parts"]
             chain.append({
                 "track_id": track_id, "title": row["title"], "artist": row["artist"],
                 "genre": "MuRec2 acoustic", "subgenre": candidate_fp["acoustic_signature"],
+                "provider_genre": row.get("provider_genre") or row.get("genre"),
+                "provider_subgenre": row.get("provider_subgenre") or row.get("subgenre"),
+                "seed_genre": row.get("seed_genre"),
                 "bpm": round(candidate_fp["profile"]["bpm"]),
                 "year": int(row["year"]) if pd.notna(row.get("year")) else None,
                 "album": row.get("album"), "artwork_url": row.get("artwork_url"),
                 "preview_url": row.get("preview_url"), "external_url": row.get("external_url"),
                 "source": row.get("source") or "Catalogue", "audio_similarity": round(tempo, 4),
-                "lyric_similarity": round(timbre, 4), "collab_similarity": round(harmony, 4),
+                "lyric_similarity": round(timbre, 4), "timbre_similarity": round(timbre, 4), "collab_similarity": round(harmony, 4),
+                "vibe_similarity": round(vibe["value"], 4), "genre_similarity": round(genre, 4), "genre_scope": genre_scope,
                 "hybrid_score": round(score, 4), "score_mode": "acoustic-transition",
                 "match_reasons": metrics["reasons"], "transition_step": step,
                 "transition_from": f"{previous_row['title']} — {previous_row['artist']}",
@@ -407,6 +476,7 @@ class AcousticIndex:
         seen_track_ids: set[str] | None = None, favorite_track_ids: set[str] | None = None,
         disliked_track_ids: set[str] | None = None,
         weights: tuple[float, float, float] | None = None,
+        genre_scope: str = "nearby", vibe_lock: bool = True,
     ) -> list[dict]:
         indexed = self.all()
         rows = {str(row["track_id"]): row for row in catalog.to_dict("records")}
@@ -419,7 +489,7 @@ class AcousticIndex:
         disliked = [indexed[track_id] for track_id in (disliked_track_ids or set()) if track_id in indexed]
         chosen_weights = weights if mode == "similar" and weights else MODE_WEIGHTS.get(mode, MODE_WEIGHTS["similar"])
         if mode == "transition":
-            return self.transition_recommendations(anchor, anchor_fp, indexed, rows, k)
+            return self.transition_recommendations(anchor, anchor_fp, indexed, rows, k, genre_scope, vibe_lock)
         seen = seen_track_ids or set()
         scored = []
         for track_id, candidate_fp in indexed.items():
@@ -428,17 +498,34 @@ class AcousticIndex:
             row = rows[track_id]
             if _recording_identity(row.get("title"), row.get("artist")) == _recording_identity(anchor.get("title"), anchor.get("artist")):
                 continue
+            genre = _genre_similarity(anchor, row)
+            if genre_scope == "strict" and _primary_genre(anchor) != _primary_genre(row):
+                continue
+            if genre_scope == "nearby" and genre < .10:
+                continue
             rhythm, timbre, harmony = self.components(anchor_fp, candidate_fp)
             if mode == "personalized" and favorites:
                 favorite_components = [self.components(favorite, candidate_fp) for favorite in favorites]
                 taste = max(favorite_components, key=lambda parts: sum(weight * part for weight, part in zip(chosen_weights, parts)))
                 rhythm, timbre, harmony = tuple(.65 * anchor_part + .35 * taste_part for anchor_part, taste_part in zip((rhythm, timbre, harmony), taste))
             parts = (rhythm, timbre, harmony)
-            base = sum(weight * part for weight, part in zip(chosen_weights, parts))
-            style = subgenre_similarity(anchor.get("subgenre", ""), row.get("subgenre", ""))
-            total = base * (.52 + .48 * style)
+            acoustic_score = sum(weight * part for weight, part in zip(chosen_weights, parts))
+            vibe = self.vibe_similarity(anchor_fp, candidate_fp, anchor, row)
+            base = acoustic_score
+            if mode == "rhythm":
+                base = .72 * rhythm + .12 * vibe["value"] + .10 * harmony + .06 * timbre
+            elif mode == "timbre":
+                base = .72 * timbre + .12 * vibe["value"] + .10 * harmony + .06 * rhythm
+            elif mode == "discover":
+                stable_hash = sum((index + 1) * ord(character) for index, character in enumerate(track_id)) % 997 / 997
+                base = .42 * acoustic_score + .30 * vibe["value"] + .18 * genre + .10 * stable_hash
+            genre_factor = .86 + .14 * genre if genre_scope == "open" else .56 + .44 * genre
+            vibe_factor = .42 + .58 * vibe["value"] if vibe_lock else 1
+            total = base * genre_factor * vibe_factor
+            if vibe["title"] == 0:
+                total *= .52
             if mode == "discover" and str(row.get("artist", "")).casefold() == str(anchor.get("artist", "")).casefold():
-                total *= .72
+                total *= .58
             if track_id in seen:
                 total *= .40 if mode == "discover" else .76
             if disliked:
@@ -456,6 +543,10 @@ class AcousticIndex:
                 abs(profile_a["bpm"] * 2 - profile_b["bpm"]),
             )
             reasons = []
+            if genre >= .90:
+                reasons.append(f"same {_primary_genre(anchor) or 'genre'} lane")
+            if vibe["value"] >= .78:
+                reasons.append("same vibe")
             if tempo_difference <= 8:
                 reasons.append("close tempo")
             if profile_a.get("texture") == profile_b.get("texture"):
@@ -469,11 +560,15 @@ class AcousticIndex:
             scored.append({
                 "track_id": track_id, "title": row["title"], "artist": row["artist"],
                 "genre": "MuRec2 acoustic", "subgenre": signature,
+                "provider_genre": row.get("provider_genre") or row.get("genre"),
+                "provider_subgenre": row.get("provider_subgenre") or row.get("subgenre"),
+                "seed_genre": row.get("seed_genre"),
                 "year": int(row["year"]) if pd.notna(row.get("year")) else None,
                 "album": row.get("album"), "artwork_url": row.get("artwork_url"),
                 "preview_url": row.get("preview_url"), "external_url": row.get("external_url"),
                 "source": row.get("source") or "Catalogue", "audio_similarity": round(rhythm, 4),
-                "lyric_similarity": round(timbre, 4), "collab_similarity": round(harmony, 4),
+                "lyric_similarity": round(timbre, 4), "timbre_similarity": round(timbre, 4), "collab_similarity": round(harmony, 4),
+                "vibe_similarity": round(vibe["value"], 4), "genre_similarity": round(genre, 4), "genre_scope": genre_scope,
                 "hybrid_score": round(float(np.clip(total, 0, 1)), 4),
                 "score_mode": f"acoustic-fingerprint-{mode}",
                 "match_reasons": list(dict.fromkeys(reasons))[:3],

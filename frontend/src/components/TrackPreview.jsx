@@ -53,7 +53,7 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
       </div>
       <div className="reference-preview-copy">
         <h2>{track.title}</h2>
-        <p>{track.artist}{track.subgenre ? ` · ${track.subgenre}` : ""}</p>
+        <p>{track.artist}{track.provider_genre ? ` · ${track.provider_genre}` : ""}{track.subgenre ? ` · ${track.subgenre}` : ""}</p>
         <div className="reference-preview-actions">
           {track.preview_url ? (
             <button className="preview-button" onClick={togglePreview} aria-label={`${isPlaying ? "Pause" : "Play"} preview of searched song ${track.title}`}>

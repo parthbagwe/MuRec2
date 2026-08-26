@@ -235,6 +235,7 @@ def recommend(req: RecommendRequest, request: Request):
                 favorite_track_ids=preferences.get("track_ids", set()) if preferences else set(),
                 disliked_track_ids=preferences.get("disliked_track_ids", set()) if preferences else set(),
                 weights=(weights["audio"], weights["lyric"], weights["collab"]),
+                genre_scope=req.genre_scope, vibe_lock=req.vibe_lock,
             )
         except (requests.RequestException, ValueError) as error:
             raise HTTPException(status_code=422, detail=f"MuRec2 could not analyze this track's audio: {error}") from error

@@ -65,7 +65,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
             <span className="visualizer-ring" aria-hidden="true" />
             {artwork ? <img src={artwork} alt={`${rec.title} cover artwork`} /> : <span className="artwork-fallback">{rec.title.slice(0, 1)}</span>}
           </div>
-          <div><h3>{rec.title}</h3><p>{rec.artist}</p><small>{rec.subgenre || rec.genre}{rec.year ? ` · ${rec.year}` : ""}</small></div>
+          <div><h3>{rec.title}</h3><p>{rec.artist}</p><small>{rec.provider_genre ? `${rec.provider_genre} · ` : ""}{rec.subgenre || rec.genre}{rec.year ? ` · ${rec.year}` : ""}</small></div>
         </div>
         <ScoreBreakdown rec={rec} />
         {rec.transition_note && <p className="transition-note">{rec.transition_note}</p>}
