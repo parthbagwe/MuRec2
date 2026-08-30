@@ -7,6 +7,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const requestId = useRef(0);
   const suppressSearch = useRef(false);
   const preparedAudio = useRef(null);
@@ -87,6 +88,15 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
     onSelect(track, playbackHandoff);
   }
 
+  function clearSearch() {
+    requestId.current += 1;
+    setQuery("");
+    setResults([]);
+    setSearched(false);
+    setSearchError("");
+    setShowAll(false);
+  }
+
   async function upload(file) {
     const succeeded = await onAnalyze(file, query);
     if (succeeded) {
@@ -102,7 +112,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
         aria-label="Search songs"
         placeholder="Search a song or artist…"
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => { setQuery(event.target.value); setShowAll(false); }}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.nativeEvent.isComposing && results[0]) {
             event.preventDefault();
@@ -111,14 +121,18 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
         }}
       />
       {loading && <span className="search-status">searching</span>}
+      {!loading && query ? <button className="search-clear" type="button" onClick={clearSearch} aria-label="Clear song search">×</button> : null}
       {(results.length > 0 || searched || searchError) && (
         <div className="search-results">
-          {results.map((track) => (
+          {results.length ? <div className="search-results-label"><span>Best matches</span><small>Enter selects the first result</small></div> : null}
+          {(showAll ? results : results.slice(0, 8)).map((track) => (
             <button key={track.track_id} onClick={() => select(track)}>
-              <span><strong>{track.title}</strong><small>{track.artist} · {track.provider_genre ? `${track.provider_genre} · ` : ""}{track.subgenre || "audio analysis pending"}</small></span>
+              {track.artwork_url ? <img src={track.artwork_url} alt="" /> : <span className="search-artwork">{track.title.slice(0, 1)}</span>}
+              <span><strong>{track.title}</strong><small>{track.artist} · {track.provider_genre || "Genre pending"}</small></span>
               <em>{track.year}</em>
             </button>
           ))}
+          {results.length > 8 ? <button className="search-more" type="button" onClick={() => setShowAll((open) => !open)}>{showAll ? "Show fewer results" : `Show all ${results.length} results`}<span>{showAll ? "↑" : "↓"}</span></button> : null}
           {searchError && <div className="search-message error">{searchError}</div>}
           {!searchError && searched && results.length === 0 && (
             <div className="unknown-song">

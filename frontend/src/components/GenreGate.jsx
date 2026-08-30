@@ -1,4 +1,6 @@
 import { motion } from "motion/react";
+import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 const OPTIONS = [
   {
@@ -19,11 +21,31 @@ const OPTIONS = [
 ];
 
 export default function GenreGate({ track, onChoose, onCancel }) {
+  const firstOptionRef = useRef(null);
+  const cancelRef = useRef(onCancel);
+
+  useEffect(() => { cancelRef.current = onCancel; }, [onCancel]);
+
+  useEffect(() => {
+    if (!track) return undefined;
+    const previousFocus = document.activeElement;
+    const focusTimer = window.setTimeout(() => firstOptionRef.current?.focus(), 80);
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") cancelRef.current();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleKeyDown);
+      previousFocus?.focus?.();
+    };
+  }, [track]);
+
   if (!track) return null;
   const genre = track.provider_genre || track.provider_subgenre || "this genre";
 
-  return (
-    <div className="modal-backdrop genre-gate-backdrop" role="presentation">
+  return createPortal((
+    <div className="modal-backdrop genre-gate-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onCancel()}>
       <motion.section
         className="modal genre-gate"
         role="dialog"
@@ -42,7 +64,7 @@ export default function GenreGate({ track, onChoose, onCancel }) {
         <div className="vibe-lock-note"><span aria-hidden="true">●</span><strong>Vibe lock on</strong><small>energy · danceability · brightness · intensity · lyrical mood when available</small></div>
         <div className="genre-options">
           {OPTIONS.map((option, index) => (
-            <button key={option.id} onClick={() => onChoose(option.id)}>
+            <button ref={index === 0 ? firstOptionRef : null} key={option.id} onClick={() => onChoose(option.id)}>
               <em>{String(index + 1).padStart(2, "0")}</em>
               <span><strong>{option.label(genre)}</strong><small>{option.description}</small></span>
               <b aria-hidden="true">→</b>
@@ -51,5 +73,5 @@ export default function GenreGate({ track, onChoose, onCancel }) {
         </div>
       </motion.section>
     </div>
-  );
+  ), document.body);
 }

@@ -49,33 +49,11 @@ function mixTelemetry(first, second, amount) {
   return mixed;
 }
 
-function visualWeights(signal, track) {
-  const energy = trackMetric(track, "energy", signal.level);
-  const aggression = trackMetric(track, "aggression", signal.texture * 0.65);
-  const harmonic = trackMetric(track, "harmonic_ratio", 0.52);
-  const rawOnsetDensity = Number(track?.onset_density);
-  const onsetDensity = Number.isFinite(rawOnsetDensity)
-    ? clamp(rawOnsetDensity > 1 ? rawOnsetDensity / 5 : rawOnsetDensity)
-    : signal.transient;
-  const raw = {
-    flow: clamp(0.92 - energy * 0.52 - signal.transient * 0.5 + harmonic * 0.34),
-    pulse: clamp(signal.bass * 0.52 + signal.transient * 0.32 + energy * 0.28),
-    fracture: clamp(aggression * 0.62 + signal.texture * 0.3 + onsetDensity * 0.24 + signal.transient * 0.2 - 0.2),
-    orbit: clamp(harmonic * 0.52 + (1 - aggression) * 0.2 + signal.brightness * 0.22 + 0.12),
-  };
-  const total = Object.values(raw).reduce((sum, value) => sum + value, 0) || 1;
-  return Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, value / total]));
-}
-
 function rgba(hex, alpha) {
   const value = String(hex || "#ffffff").replace("#", "");
   const normalized = value.length === 3 ? value.split("").map((part) => part + part).join("") : value.padEnd(6, "f").slice(0, 6);
   const number = Number.parseInt(normalized, 16);
   return `rgba(${number >> 16}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`;
-}
-
-function dominantMode(weights) {
-  return Object.entries(weights).sort((left, right) => right[1] - left[1])[0]?.[0] || "flow";
 }
 
 export default function FullscreenVisualizer({
@@ -98,7 +76,6 @@ export default function FullscreenVisualizer({
 }) {
   const canvasRef = useRef(null);
   const modeLabelRef = useRef(null);
-  const modeLegendRef = useRef(null);
   const timeRef = useRef(currentTime);
   const playingRef = useRef(isPlaying);
   const crossfadingRef = useRef(crossfading);
@@ -156,10 +133,8 @@ export default function FullscreenVisualizer({
         : fallback;
       const response = 1 - Math.exp(-delta * (target.transient > smoothed.transient ? 15 : 5));
       for (const key of Object.keys(smoothed)) smoothed[key] += (target[key] - smoothed[key]) * response;
-      const weights = visualWeights(smoothed, track);
-      const activeMode = dominantMode(weights);
-      const centerX = width * (0.52 + Math.sin(seed) * 0.025);
-      const centerY = height * 0.46;
+      const centerX = width * 0.5;
+      const centerY = height * 0.47;
       const shortSide = Math.min(width, height);
       const beatKick = clamp(smoothed.transient * 0.75 + smoothed.bass * 0.25);
 
@@ -177,66 +152,69 @@ export default function FullscreenVisualizer({
       context.lineCap = "round";
       context.lineJoin = "round";
 
-      const flowLines = width < 720 ? 8 : 13;
-      for (let row = 0; row < flowLines; row += 1) {
-        const lane = row / Math.max(1, flowLines - 1);
-        const baseY = height * (0.2 + lane * 0.56);
-        const amplitude = (18 + smoothed.level * 70) * (0.45 + weights.flow);
+      const guideCount = width < 720 ? 8 : 14;
+      for (let guide = 0; guide < guideCount; guide += 1) {
+        const y = height * (0.15 + guide / Math.max(1, guideCount - 1) * 0.66);
         context.beginPath();
-        for (let x = -20; x <= width + 20; x += 22) {
+        context.moveTo(width * 0.04, y);
+        context.lineTo(width * 0.96, y);
+        context.strokeStyle = "rgba(255,255,255,0.035)";
+        context.lineWidth = 1;
+        context.stroke();
+      }
+
+      const waveCount = width < 720 ? 12 : 22;
+      for (let row = 0; row < waveCount; row += 1) {
+        const lane = row / Math.max(1, waveCount - 1);
+        const baseY = height * (0.16 + lane * 0.64);
+        const centreWeight = Math.sin(lane * Math.PI);
+        const amplitude = (10 + smoothed.level * 54 + beatKick * 16) * (0.3 + centreWeight * 0.92);
+        const frequency = 1.25 + smoothed.brightness * 2.25 + lane * 0.55;
+        const phase = visualTime * (0.55 + smoothed.bass * 0.85) + row * 0.34 + seed * 0.002;
+        context.beginPath();
+        for (let x = -10; x <= width + 10; x += 8) {
           const nx = x / Math.max(1, width);
-          const wave = Math.sin(nx * Math.PI * (2.2 + smoothed.texture * 3.4) + visualTime * (0.24 + smoothed.level * 0.5) + row * 0.72 + seed * 0.013);
-          const voice = Math.sin(nx * Math.PI * 7.5 - visualTime * 0.19 + row * 0.31) * smoothed.brightness * 0.36;
-          const y = baseY + (wave + voice) * amplitude * (0.25 + Math.sin(nx * Math.PI) * 0.75);
+          const envelope = Math.pow(Math.sin(clamp(nx) * Math.PI), 0.62);
+          const fundamental = Math.sin(nx * Math.PI * 2 * frequency + phase);
+          const harmonic = Math.sin(nx * Math.PI * (5.5 + smoothed.texture * 5.5) - phase * 0.62 + row * 0.21) * (0.16 + smoothed.texture * 0.24);
+          const transient = Math.sin(nx * Math.PI * 18 - phase * 1.8) * smoothed.transient * 0.18;
+          const y = baseY + (fundamental + harmonic + transient) * amplitude * envelope;
           if (x < 0) context.moveTo(x, y); else context.lineTo(x, y);
         }
-        context.strokeStyle = rgba(row % 3 === 0 ? colors[2] : colors[1], (0.06 + weights.flow * 0.32) * (0.45 + lane * 0.55));
-        context.lineWidth = 0.7 + smoothed.level * 1.4;
+        const lineColor = row % 4 === 0 ? colors[0] : row % 2 === 0 ? colors[2] : colors[1];
+        context.strokeStyle = rgba(lineColor, 0.08 + centreWeight * 0.3 + smoothed.level * 0.08);
+        context.lineWidth = 0.65 + centreWeight * 1.15 + beatKick * 0.75;
         context.stroke();
       }
 
-      const ringCount = width < 720 ? 5 : 8;
-      for (let ring = 0; ring < ringCount; ring += 1) {
-        const phase = (visualTime * (0.08 + smoothed.bass * 0.18) + ring / ringCount) % 1;
-        const radius = shortSide * (0.07 + phase * 0.48) * (1 + beatKick * 0.07);
-        context.beginPath();
-        context.ellipse(centerX, centerY, radius * (1.04 + weights.orbit * 0.32), radius * (0.66 + weights.flow * 0.17), visualTime * 0.025 + ring * 0.08, 0, Math.PI * 2);
-        context.strokeStyle = rgba(ring % 2 ? colors[0] : colors[1], (1 - phase) * (0.035 + weights.pulse * 0.34));
-        context.lineWidth = 0.8 + beatKick * 2.2;
-        context.stroke();
-      }
-
-      const points = width < 720 ? 36 : 68;
+      const heroAmplitude = shortSide * (0.055 + smoothed.bass * 0.075 + beatKick * 0.035);
       context.beginPath();
-      for (let point = 0; point <= points; point += 1) {
-        const angle = point / points * Math.PI * 2;
-        const jagged = Math.sin(angle * (7 + Math.round(smoothed.texture * 9)) + visualTime * 1.8 + seed) * smoothed.texture;
-        const transientSpike = Math.pow(Math.abs(Math.sin(angle * 5 + seed)), 8) * smoothed.transient;
-        const radius = shortSide * (0.19 + weights.fracture * 0.15 + jagged * 0.08 + transientSpike * 0.13);
-        const x = centerX + Math.cos(angle) * radius * 1.16;
-        const y = centerY + Math.sin(angle) * radius * 0.82;
-        if (point === 0) context.moveTo(x, y); else context.lineTo(x, y);
+      for (let x = 0; x <= width; x += 4) {
+        const nx = x / Math.max(1, width);
+        const envelope = Math.pow(Math.sin(nx * Math.PI), 0.5);
+        const low = Math.sin(nx * Math.PI * (3.1 + smoothed.bass * 1.8) - visualTime * (1 + smoothed.bass));
+        const high = Math.sin(nx * Math.PI * (11 + smoothed.brightness * 10) + visualTime * 1.6) * smoothed.texture * 0.22;
+        const y = centerY + (low + high) * heroAmplitude * envelope;
+        if (x === 0) context.moveTo(x, y); else context.lineTo(x, y);
       }
-      context.closePath();
-      context.strokeStyle = rgba(colors[0], 0.14 + weights.fracture * 0.58);
-      context.lineWidth = 0.8 + weights.fracture * 2.2 + smoothed.transient * 1.6;
-      context.shadowBlur = 8 + smoothed.transient * 16;
+      context.strokeStyle = rgba(colors[0], 0.58 + smoothed.level * 0.34);
+      context.lineWidth = 1.8 + beatKick * 3.4;
+      context.shadowBlur = 12 + smoothed.transient * 24;
       context.shadowColor = colors[0];
       context.stroke();
 
-      const particles = width < 720 ? 34 : 74;
-      context.shadowBlur = 0;
-      for (let index = 0; index < particles; index += 1) {
-        const angle = seed * 0.1 + index * 2.399 + visualTime * (0.012 + smoothed.brightness * 0.035);
-        const orbit = shortSide * (0.16 + ((index * 37) % 100) / 100 * 0.39);
-        const drift = Math.sin(visualTime * 0.21 + index) * 10 * smoothed.texture;
-        const x = centerX + Math.cos(angle) * (orbit + drift) * (1.04 + weights.orbit * 0.28);
-        const y = centerY + Math.sin(angle) * orbit * 0.64;
-        const size = 0.6 + smoothed.brightness * 1.8 + (index % 9 === 0 ? smoothed.transient * 2.6 : 0);
-        context.fillStyle = rgba(index % 3 === 0 ? colors[2] : "#ffffff", 0.12 + weights.orbit * 0.52 + smoothed.brightness * 0.12);
+      if (crossfadingRef.current) {
         context.beginPath();
-        context.arc(x, y, size, 0, Math.PI * 2);
-        context.fill();
+        for (let x = 0; x <= width; x += 5) {
+          const nx = x / Math.max(1, width);
+          const envelope = Math.pow(Math.sin(nx * Math.PI), 0.52);
+          const y = centerY + Math.sin(nx * Math.PI * 4.4 + visualTime * 1.18) * heroAmplitude * 0.78 * envelope;
+          if (x === 0) context.moveTo(x, y); else context.lineTo(x, y);
+        }
+        context.strokeStyle = rgba(colors[2], 0.72);
+        context.lineWidth = 2.2;
+        context.shadowColor = colors[2];
+        context.stroke();
       }
       context.restore();
 
@@ -249,8 +227,7 @@ export default function FullscreenVisualizer({
 
       frameCount += 1;
       if (frameCount % 12 === 0) {
-        if (modeLabelRef.current) modeLabelRef.current.textContent = `${activeMode} · ${telemetry?.analyzed ? "preview analyzed" : "acoustic profile"}`;
-        if (modeLegendRef.current) modeLegendRef.current.dataset.active = activeMode;
+        if (modeLabelRef.current) modeLabelRef.current.textContent = `sine field · ${telemetry?.analyzed ? "preview analyzed" : "acoustic profile"}`;
       }
       animationFrame = requestAnimationFrame(draw);
     };
@@ -277,7 +254,7 @@ export default function FullscreenVisualizer({
       <div className="heightmap-grain" aria-hidden="true" />
 
       <header className="heightmap-header">
-        <span>Cerum / adaptive audio field</span>
+        <span>Cerum / live sine field</span>
         <div className="heightmap-telemetry">
           <span ref={modeLabelRef}>listening to preview</span>
           <span>{track.bpm ? `${Math.round(track.bpm)} bpm` : "tempo measured"}</span>
@@ -286,13 +263,6 @@ export default function FullscreenVisualizer({
         </div>
         <button onClick={onClose} aria-label="Close full-screen visuals">Exit visuals <kbd>Esc</kbd></button>
       </header>
-
-      <div className="visual-mode-legend" ref={modeLegendRef} data-active="flow" aria-hidden="true">
-        <span data-mode="flow">Flow</span>
-        <span data-mode="pulse">Pulse</span>
-        <span data-mode="fracture">Fracture</span>
-        <span data-mode="orbit">Orbit</span>
-      </div>
 
       <div className="heightmap-title" aria-live="polite">
         <motion.span key={`${track.track_id}-state`} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }}>

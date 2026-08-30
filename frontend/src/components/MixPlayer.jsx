@@ -84,6 +84,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   const [playbackError, setPlaybackError] = useState("");
   const [visualizerOpen, setVisualizerOpen] = useState(false);
   const lastAutoPlayToken = useRef(0);
+  const lastVisualizerToken = useRef(0);
   const anchorKey = queue[0]?.track_id || "";
   const activeTrack = queue[activeIndex] || queue[0];
   const nextTrack = queue.slice(activeIndex + 1).find((track) => track.preview_url);
@@ -304,6 +305,13 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     if (audio.readyState >= 1) begin();
     else audio.addEventListener("loadedmetadata", begin, { once: true });
     return () => audio.removeEventListener("loadedmetadata", begin);
+  }, [anchorKey, autoPlayToken]);
+
+  useEffect(() => {
+    if (!anchorKey || !autoPlayToken || autoPlayToken === lastVisualizerToken.current) return;
+    lastVisualizerToken.current = autoPlayToken;
+    setVisualizerOpen(true);
+    setQueueOpen(false);
   }, [anchorKey, autoPlayToken]);
 
   useEffect(() => {
@@ -624,10 +632,10 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
           <div className="mix-progress"><span>{formatTime(currentTime)}</span><input type="range" min="0" max={duration || 30} step="0.1" value={Math.min(currentTime, duration || 30)} onChange={(event) => seek(event.target.value)} aria-label="Preview position" /><span>{formatTime(duration || 30)}</span></div>
         </div>
         <div className="mix-actions">
-          <span className="blend-status">{crossfading ? (mixPlanStatus === "ready" ? "phrase-aligned blend live" : "beat-matched blend live") : nextTrack ? (mixPlanStatus === "ready" ? "preview-analyzed mix ready" : mixPlanStatus === "analyzing" ? "listening for the transition point" : `${nextBlend.toFixed(1)}s beat-matched blend`) : "end of queue"}</span>
+          <span className="blend-status">{loading ? "Building your mix…" : crossfading ? (mixPlanStatus === "ready" ? "phrase-aligned blend live" : "beat-matched blend live") : nextTrack ? (mixPlanStatus === "ready" ? "preview-analyzed mix ready" : mixPlanStatus === "analyzing" ? "listening for the transition point" : `${nextBlend.toFixed(1)}s beat-matched blend`) : "end of queue"}</span>
           <button className="visuals-button" onClick={() => setVisualizerOpen(true)}>Visuals ↗</button>
           <a href={youtubeSearchUrl(activeTrack)} target="_blank" rel="noreferrer" onClick={() => onInteraction(activeTrack, "youtube_opened")}>YouTube ↗</a>
-          <button className="queue-button" onClick={() => setQueueOpen((open) => !open)} aria-expanded={queueOpen}><span>Up next</span><strong>{loading ? "…" : playableFollowups}</strong></button>
+          <button className="queue-button" onClick={() => setQueueOpen((open) => !open)} aria-expanded={queueOpen}><span>{loading ? "Building mix" : "Up next"}</span><strong>{loading ? "…" : playableFollowups}</strong></button>
         </div>
       </div>
       {playbackError && <p className="mix-error" role="alert">{playbackError}</p>}

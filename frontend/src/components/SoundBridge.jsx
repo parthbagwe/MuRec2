@@ -95,8 +95,8 @@ export default function SoundBridge({ building, onBuild }) {
   return (
     <motion.form className="sound-bridge" onSubmit={submit} initial={{ opacity: 0, x: -90 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 88, damping: 21 }}>
       <div className="bridge-heading">
-        <p className="kicker">01 / Sound Bridge</p>
-        <h1>Build a five-song path.</h1>
+        <p className="kicker">Sound Bridge</p>
+        <h1>Choose the first and final song.</h1>
         <p>Choose where the mix begins and where it should land. Cerum calculates the three playable handoffs between them.</p>
       </div>
 

@@ -67,10 +67,14 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
           </div>
           <div><h3>{rec.title}</h3><p>{rec.artist}</p><small>{rec.provider_genre ? `${rec.provider_genre} · ` : ""}{rec.subgenre || rec.genre}{rec.year ? ` · ${rec.year}` : ""}</small></div>
         </div>
-        <ScoreBreakdown rec={rec} />
         {rec.transition_note && <p className="transition-note">{rec.transition_note}</p>}
         {rec.match_reasons?.length > 0 && <div className="match-reasons" aria-label="Why this matches">{rec.match_reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>}
       </button>
+
+      <details className="score-details">
+        <summary>Why this fits <span>+</span></summary>
+        <ScoreBreakdown rec={rec} />
+      </details>
 
       <div className="card-actions">
         {rec.preview_url ? (
