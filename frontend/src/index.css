@@ -616,12 +616,14 @@ footer a:hover { color: var(--acid); }
   border: 0;
   background: #000;
 }
+.app-shell > .app-header { position: sticky; z-index: 90; }
+.app-shell > .app-layout { position: relative; z-index: 1; }
 .header-brand-cluster { display: flex; gap: 12px; align-items: center; }
 .logo { display: inline-flex; gap: 9px; align-items: center; font-size: 18px; letter-spacing: -.5px; text-transform: none; }
 .logo > span { display: grid; width: 42px; height: 42px; border-radius: 50%; background: #fff; color: #000; font-size: 18px; place-items: center; }
 .home-button { display: grid; width: 46px; height: 46px; border-radius: 50%; background: #202020; color: #fff; font-size: 24px; text-decoration: none; place-items: center; }
 .home-button:hover { background: #2b2b2b; transform: scale(1.03); }
-.header-search { position: relative; min-width: 0; }
+.header-search { position: relative; z-index: 2; min-width: 0; }
 .header-search .search-wrap > input { height: 48px; padding: 0 116px 0 48px; border: 0; border-radius: 999px; background: #242424; color: #fff; font-size: 15px; }
 .header-search .search-wrap > input::placeholder { color: #b3b3b3; }
 .header-search .search-wrap > input:focus { outline: 2px solid #fff; outline-offset: -2px; background: #2a2a2a; }
@@ -629,7 +631,7 @@ footer a:hover { color: var(--acid); }
 .header-search .search-status { top: 18px; right: 17px; color: #aaa; }
 .header-search .search-clear { top: 5px; right: 6px; color: #fff; }
 .header-search .search-status + .search-clear { right: 84px; }
-.header-search .search-results { top: 55px; overflow: hidden auto; border: 1px solid #3b3b3b; border-radius: 10px; background: #282828; box-shadow: 0 20px 46px #000c; color: #fff; }
+.header-search .search-results { z-index: 100; top: 55px; overflow: hidden auto; border: 1px solid #3b3b3b; border-radius: 10px; background: #282828; box-shadow: 0 20px 46px #000c; color: #fff; }
 .header-search .search-results-label { border-color: #424242; color: #aaa; }
 .header-search .search-results button { border-color: #3b3b3b; background: #282828; color: #fff; }
 .header-search .search-results button:hover { background: #3b3b3b; color: #fff; }
