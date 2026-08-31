@@ -1,7 +1,7 @@
 import numpy as np
 
 from src.evaluation.metrics import coverage, intra_list_diversity, ndcg_at_k, precision_at_k, recall_at_k
-from src.subgenres import infer_subgenre, subgenre_similarity
+from src.subgenres import ALL_SUBGENRES, FAMILIES, family_for, infer_subgenre, subgenre_similarity
 from src.acoustic_index import AcousticIndex, _genre_similarity, _recording_identity
 
 
@@ -25,6 +25,14 @@ def test_microgenre_guardrail_distinguishes_broad_neighbors():
     same_family = subgenre_similarity("nu metal", "thrash metal")
     broad_neighbor = subgenre_similarity("nu metal", "alternative rock")
     assert exact > adjacent > same_family > broad_neighbor
+
+
+def test_expanded_taxonomy_covers_global_and_indian_styles():
+    assert len(ALL_SUBGENRES) >= 99
+    assert len(FAMILIES) >= 12
+    assert family_for("tamil kuthu") == "indian-film"
+    assert family_for("melodic death metal") == "metal"
+    assert family_for("amapiano") == "electronic"
 
 
 def test_artist_taxonomy_does_not_match_a_name_fragment():

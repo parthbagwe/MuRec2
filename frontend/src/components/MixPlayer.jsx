@@ -3,6 +3,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { analyzePreview, buildTransitionPlan, samplePreviewProfile } from "../audio/transitionAnalyzer";
 import FullscreenVisualizer from "./FullscreenVisualizer";
 
+const PREVIEW_LIMIT_SECONDS = 30;
+const previewDuration = (audio) => Math.min(Number(audio?.duration) || PREVIEW_LIMIT_SECONDS, PREVIEW_LIMIT_SECONDS);
+
 function PlayIcon({ playing }) {
   return playing
     ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h5v14H6zM13 5h5v14h-5z" /></svg>
@@ -267,13 +270,13 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     }
     audioRefs.current[0] = audio;
     const syncTime = () => handleTimeUpdate(0);
-    const syncDuration = () => setDuration(audio.duration || 0);
+    const syncDuration = () => setDuration(previewDuration(audio));
     const finish = () => handleEnded(0);
     audio.addEventListener("loadedmetadata", syncDuration);
     audio.addEventListener("timeupdate", syncTime);
     audio.addEventListener("ended", finish);
     setCurrentTime(audio.currentTime || 0);
-    setDuration(audio.duration || 0);
+    setDuration(previewDuration(audio));
     setPlaybackError("");
     playbackHandoff.playPromise
       .then(() => {
@@ -361,7 +364,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     activeIndexRef.current = index;
     setActiveIndex(index);
     setCurrentTime(audio.currentTime);
-    setDuration(audio.duration || 0);
+    setDuration(previewDuration(audio));
     setCrossfading(false);
     setPlaybackError("");
     if (!shouldPlay) return;
@@ -474,7 +477,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       activeIndexRef.current = toIndex;
       setActiveIndex(toIndex);
       setCurrentTime(incoming.currentTime);
-      setDuration(incoming.duration || 0);
+      setDuration(previewDuration(incoming));
       setCrossfading(false);
       crossfadingRef.current = false;
       onTrackChange(currentQueue[toIndex]);
@@ -506,13 +509,18 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     const audio = audioRefs.current[index];
     if (!audio) return;
     setCurrentTime(audio.currentTime);
-    setDuration(audio.duration || 0);
-    const remaining = audio.duration - audio.currentTime;
+    const cappedDuration = previewDuration(audio);
+    setDuration(cappedDuration);
+    const remaining = cappedDuration - audio.currentTime;
     const nextIndex = nextPlayableIndex(index);
     const plan = nextIndex >= 0 ? transitionPlanFor(index, nextIndex) : null;
     const reachedAnalyzedBoundary = plan && audio.currentTime >= plan.outgoingStart;
     const reachedFallbackBoundary = !plan && remaining > 0 && remaining <= blendLength(queueRef.current[index], queueRef.current[nextIndex]) + 0.7;
     if (isPlayingRef.current && nextIndex >= 0 && (reachedAnalyzedBoundary || reachedFallbackBoundary)) beginCrossfade(index);
+    if (audio.currentTime >= PREVIEW_LIMIT_SECONDS && !crossfadingRef.current) {
+      audio.pause();
+      handleEnded(index);
+    }
   }
 
   useEffect(() => {
@@ -639,7 +647,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
         </div>
       </div>
       {playbackError && <p className="mix-error" role="alert">{playbackError}</p>}
-      {queue.map((track, index) => track.preview_url && !(index === 0 && playbackHandoff?.trackId === track.track_id) && <audio key={`${track.track_id}-audio`} ref={(node) => { audioRefs.current[index] = node; }} src={track.preview_url} preload={index <= activeIndex + 2 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(event.currentTarget.duration); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} />)}
+      {queue.map((track, index) => track.preview_url && !(index === 0 && playbackHandoff?.trackId === track.track_id) && <audio key={`${track.track_id}-audio`} ref={(node) => { audioRefs.current[index] = node; }} src={track.preview_url} preload={index <= activeIndex + 2 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(previewDuration(event.currentTarget)); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} />)}
     </motion.aside>
   );
 }

@@ -152,20 +152,75 @@ SEED_ALIASES = {
 
 FAMILIES = {
     "metal": {
-        "nu metal", "alternative metal", "metalcore", "thrash metal", "death metal",
-        "black metal", "doom metal", "progressive metal", "industrial metal",
-        "power metal", "symphonic metal", "glam metal", "heavy metal",
+        "heavy metal", "nu metal", "alternative metal", "metalcore", "deathcore",
+        "thrash metal", "death metal", "melodic death metal", "black metal", "doom metal",
+        "sludge metal", "groove metal", "progressive metal", "industrial metal",
+        "power metal", "symphonic metal", "gothic metal", "folk metal", "glam metal",
     },
     "rock": {
-        "progressive rock", "grunge", "alternative rock", "indie rock", "shoegaze",
-        "post punk", "pop punk", "emo", "hard rock", "psychedelic rock",
-        "punk rock", "rock",
+        "rock", "classic rock", "alternative rock", "indie rock", "hard rock", "soft rock",
+        "progressive rock", "psychedelic rock", "garage rock", "blues rock", "southern rock",
+        "post-rock", "math rock", "grunge", "shoegaze", "noise rock",
     },
-    "electronic": {"electronic", "house", "techno", "drum and bass", "dubstep", "ambient", "synthpop"},
-    "pop": {"pop", "dance pop", "dream pop", "synthpop", "indie pop", "k-pop"},
-    "hip-hop": {"hip-hop", "trap", "boom bap", "drill"},
-    "r&b": {"r&b", "neo soul", "soul", "funk"},
+    "punk": {
+        "punk rock", "pop punk", "post punk", "hardcore punk", "post-hardcore", "emo",
+        "screamo", "skate punk", "crust punk", "anarcho-punk",
+    },
+    "pop": {
+        "pop", "dance pop", "electropop", "synthpop", "indie pop", "dream pop", "art pop",
+        "bedroom pop", "hyperpop", "teen pop", "psychedelic pop", "chamber pop", "k-pop", "j-pop",
+    },
+    "hip-hop": {
+        "hip-hop", "boom bap", "trap", "drill", "conscious hip-hop", "alternative hip-hop",
+        "cloud rap", "jazz rap", "gangsta rap", "lo-fi hip-hop", "rage", "grime",
+        "desi hip-hop", "tamil hip-hop",
+    },
+    "r&b": {
+        "r&b", "contemporary r&b", "alternative r&b", "neo soul", "soul", "classic soul",
+        "funk", "quiet storm", "motown", "gospel soul",
+    },
+    "electronic": {
+        "electronic", "house", "deep house", "progressive house", "techno", "trance", "ambient",
+        "downtempo", "trip-hop", "drum and bass", "jungle", "dubstep", "uk garage",
+        "breakbeat", "idm", "future bass", "disco", "electro", "amapiano",
+    },
+    "indian-film": {
+        "bollywood", "hindi film romantic", "hindi film dance", "tamil film melody", "tamil kuthu",
+        "tamil gaana", "telugu film music", "malayalam film music", "indian film orchestral",
+        "indian soundtrack",
+    },
+    "indian-classical": {
+        "hindustani classical", "carnatic classical", "thumri", "dhrupad", "khayal",
+        "instrumental raga", "semi-classical indian", "tarana",
+    },
+    "indian-folk": {
+        "bhangra", "punjabi folk", "rajasthani folk", "baul", "qawwali", "ghazal", "bhajan",
+        "sufi", "devotional", "lavani", "bhojpuri folk", "garba",
+    },
+    "global": {
+        "afrobeat", "afrobeats", "reggae", "dancehall", "reggaeton", "latin pop", "salsa",
+        "bachata", "bossa nova", "samba", "flamenco", "arabic pop", "c-pop", "mandopop",
+    },
+    "jazz-blues": {
+        "jazz", "bebop", "cool jazz", "modal jazz", "jazz fusion", "smooth jazz", "vocal jazz",
+        "blues", "delta blues", "electric blues", "soul blues",
+    },
+    "folk-country": {
+        "folk", "singer-songwriter", "indie folk", "folk rock", "americana", "country",
+        "country pop", "alt-country", "bluegrass",
+    },
+    "classical-cinematic": {
+        "classical", "baroque", "romantic classical", "modern classical", "minimalism",
+        "orchestral", "film score", "game soundtrack", "musical theatre", "opera",
+    },
 }
+
+CANONICAL_BY_NORMALIZED = {
+    re.sub(r"[^a-z0-9]+", " ", style.lower()).strip(): style
+    for styles in FAMILIES.values()
+    for style in styles
+}
+ALL_SUBGENRES = tuple(sorted({style for styles in FAMILIES.values() for style in styles}))
 
 ADJACENT = {
     "nu metal": {"alternative metal": .78, "industrial metal": .62, "metalcore": .58, "hard rock": .42},
@@ -211,6 +266,8 @@ def infer_subgenre(artist: str, genre: str, seed_genre: str = "", title: str = "
     normalized_genre = _normalize(genre)
     if normalized_genre in GENRE_ALIASES:
         return GENRE_ALIASES[normalized_genre]
+    if normalized_genre in CANONICAL_BY_NORMALIZED:
+        return CANONICAL_BY_NORMALIZED[normalized_genre]
     normalized_seed = str(seed_genre).lower().strip()
     if normalized_seed in SEED_ALIASES:
         return SEED_ALIASES[normalized_seed]

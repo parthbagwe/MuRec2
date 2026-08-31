@@ -45,6 +45,12 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
     }
   }
 
+  function completePreview() {
+    audioRef.current?.pause();
+    onPreviewChange(null);
+    onInteraction(track, "preview_completed");
+  }
+
   return (
     <div className={`reference-preview ${isPlaying ? "is-playing" : ""}`}>
       <div className="artwork-disc">
@@ -69,7 +75,8 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
           ref={audioRef}
           src={track.preview_url}
           preload="none"
-          onEnded={() => { onPreviewChange(null); onInteraction(track, "preview_completed"); }}
+          onTimeUpdate={(event) => { if (event.currentTarget.currentTime >= 30) completePreview(); }}
+          onEnded={completePreview}
         />
       )}
     </div>

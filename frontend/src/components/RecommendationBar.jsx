@@ -47,6 +47,12 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
     }
   }
 
+  function completePreview() {
+    audioRef.current?.pause();
+    onPreviewChange(null);
+    onInteraction(rec, "preview_completed");
+  }
+
   const artwork = rec.artwork_url?.replace("100x100bb", "300x300bb");
 
   return (
@@ -87,7 +93,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
       </div>
       {rec.preview_url && <small className="preview-credit">30-second preview courtesy of iTunes</small>}
       {rec.preview_url && (
-        <audio ref={audioRef} src={rec.preview_url} preload="none" onEnded={() => { onPreviewChange(null); onInteraction(rec, "preview_completed"); }} />
+        <audio ref={audioRef} src={rec.preview_url} preload="none" onTimeUpdate={(event) => { if (event.currentTarget.currentTime >= 30) completePreview(); }} onEnded={completePreview} />
       )}
     </motion.article>
   );

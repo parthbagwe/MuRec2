@@ -35,19 +35,28 @@ const allowedEvents = new Set([
 
 const styleFamilies: Record<string, Set<string>> = {
   metal: new Set([
-    "nu metal", "alternative metal", "metalcore", "thrash metal", "death metal",
-    "black metal", "doom metal", "progressive metal", "industrial metal",
-    "power metal", "symphonic metal", "glam metal", "heavy metal",
+    "heavy metal", "nu metal", "alternative metal", "metalcore", "deathcore", "thrash metal",
+    "death metal", "melodic death metal", "black metal", "doom metal", "sludge metal", "groove metal",
+    "progressive metal", "industrial metal", "power metal", "symphonic metal", "gothic metal", "folk metal", "glam metal",
   ]),
   rock: new Set([
-    "progressive rock", "grunge", "alternative rock", "indie rock", "shoegaze",
-    "post punk", "pop punk", "emo", "hard rock", "psychedelic rock", "punk rock", "rock",
+    "rock", "classic rock", "alternative rock", "indie rock", "hard rock", "soft rock", "progressive rock",
+    "psychedelic rock", "garage rock", "blues rock", "southern rock", "post-rock", "math rock", "grunge", "shoegaze", "noise rock",
   ]),
-  electronic: new Set(["electronic", "house", "techno", "drum and bass", "jungle/drum'n'bass", "dubstep", "ambient", "synthpop", "downtempo", "amapiano"]),
-  pop: new Set(["pop", "dance pop", "dream pop", "synthpop", "indie pop", "k-pop", "j-pop"]),
-  "hip-hop": new Set(["hip-hop", "trap", "boom bap", "drill"]),
-  "r&b": new Set(["r&b", "neo soul", "neo-soul", "soul", "funk"]),
+  punk: new Set(["punk rock", "pop punk", "post punk", "hardcore punk", "post-hardcore", "emo", "screamo", "skate punk", "crust punk", "anarcho-punk"]),
+  pop: new Set(["pop", "dance pop", "electropop", "synthpop", "indie pop", "dream pop", "art pop", "bedroom pop", "hyperpop", "teen pop", "psychedelic pop", "chamber pop", "k-pop", "j-pop"]),
+  "hip-hop": new Set(["hip-hop", "boom bap", "trap", "drill", "conscious hip-hop", "alternative hip-hop", "cloud rap", "jazz rap", "gangsta rap", "lo-fi hip-hop", "rage", "grime", "desi hip-hop", "tamil hip-hop"]),
+  "r&b": new Set(["r&b", "contemporary r&b", "alternative r&b", "neo soul", "soul", "classic soul", "funk", "quiet storm", "motown", "gospel soul"]),
+  electronic: new Set(["electronic", "house", "deep house", "progressive house", "techno", "trance", "ambient", "downtempo", "trip-hop", "drum and bass", "jungle", "dubstep", "uk garage", "breakbeat", "idm", "future bass", "disco", "electro", "amapiano"]),
+  "indian-film": new Set(["bollywood", "hindi film romantic", "hindi film dance", "tamil film melody", "tamil kuthu", "tamil gaana", "telugu film music", "malayalam film music", "indian film orchestral", "indian soundtrack"]),
+  "indian-classical": new Set(["hindustani classical", "carnatic classical", "thumri", "dhrupad", "khayal", "instrumental raga", "semi-classical indian", "tarana"]),
+  "indian-folk": new Set(["bhangra", "punjabi folk", "rajasthani folk", "baul", "qawwali", "ghazal", "bhajan", "sufi", "devotional", "lavani", "bhojpuri folk", "garba"]),
+  global: new Set(["afrobeat", "afrobeats", "reggae", "dancehall", "reggaeton", "latin pop", "salsa", "bachata", "bossa nova", "samba", "flamenco", "arabic pop", "c-pop", "mandopop"]),
+  "jazz-blues": new Set(["jazz", "bebop", "cool jazz", "modal jazz", "jazz fusion", "smooth jazz", "vocal jazz", "blues", "delta blues", "electric blues", "soul blues"]),
+  "folk-country": new Set(["folk", "singer-songwriter", "indie folk", "folk rock", "americana", "country", "country pop", "alt-country", "bluegrass"]),
+  "classical-cinematic": new Set(["classical", "baroque", "romantic classical", "modern classical", "minimalism", "orchestral", "film score", "game soundtrack", "musical theatre", "opera"]),
 };
+const providerTaxonomy = [...new Set(Object.values(styleFamilies).flatMap((styles) => [...styles]))].sort();
 const styleAdjacency: Record<string, Record<string, number>> = {
   "nu metal": { "alternative metal": 0.78, "industrial metal": 0.62, metalcore: 0.58, "hard rock": 0.42 },
   "alternative metal": { "progressive metal": 0.62, metalcore: 0.60, "hard rock": 0.55 },
@@ -71,6 +80,7 @@ class ApiError extends Error {
 let libraryCache: JsonRecord[] | null = null;
 let libraryCachedAt = 0;
 const chartCache = new Map<string, { expiresAt: number; rows: JsonRecord[] }>();
+const globalSearchCache = new Map<string, { expiresAt: number; rows: JsonRecord[] }>();
 
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: responseHeaders });
@@ -202,6 +212,93 @@ function recordingIdentity(title: unknown, artist: unknown) {
     .trim();
   const artistKey = normalizedStyle(artist).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   return `${baseTitle}::${artistKey}`;
+}
+
+function appleTrack(item: JsonRecord) {
+  if (!item.trackId || !item.trackName || !item.artistName || !item.trackViewUrl) return null;
+  const release = String(item.releaseDate ?? "");
+  return {
+    track_id: `apple-${item.trackId}`,
+    title: item.trackName,
+    artist: item.artistName,
+    album: item.collectionName ?? "",
+    year: /^\d{4}/.test(release) ? Number(release.slice(0, 4)) : null,
+    artwork_url: item.artworkUrl100 ?? "",
+    preview_url: item.previewUrl ?? "",
+    external_url: item.trackViewUrl,
+    source: "Apple Music",
+    provider_genre: item.primaryGenreName ?? null,
+    provider_subgenre: item.primaryGenreName ?? null,
+    seed_genre: null,
+  };
+}
+
+async function searchGlobalCatalogue(query: string, limit: number) {
+  const key = normalizedStyle(query);
+  const cached = globalSearchCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.rows.slice(0, limit);
+
+  const rows: JsonRecord[] = [];
+  const seen = new Set<string>();
+  for (const country of ["IN", "US", "GB"]) {
+    const url = new URL("https://itunes.apple.com/search");
+    url.search = new URLSearchParams({ term: query, media: "music", entity: "song", limit: String(limit), country }).toString();
+    const response = await fetch(url, { signal: AbortSignal.timeout(8_000) }).catch(() => null);
+    if (!response?.ok) continue;
+    const payload = await response.json().catch(() => ({ results: [] }));
+    for (const item of payload.results ?? []) {
+      const track = appleTrack(item);
+      if (!track) continue;
+      const identity = recordingIdentity(track.title, track.artist);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      rows.push(track);
+      if (rows.length >= limit) break;
+    }
+    if (rows.length >= limit) break;
+  }
+
+  if (rows.length < limit) {
+    const url = new URL("https://musicbrainz.org/ws/2/recording/");
+    url.search = new URLSearchParams({ query, fmt: "json", limit: String(Math.min(25, limit)) }).toString();
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Cerum/3.0 (https://cerum.vercel.app)" },
+      signal: AbortSignal.timeout(8_000),
+    }).catch(() => null);
+    if (response?.ok) {
+      const payload = await response.json().catch(() => ({ recordings: [] }));
+      for (const recording of payload.recordings ?? []) {
+        const title = String(recording.title ?? "").trim();
+        const artist = (recording["artist-credit"] ?? [])
+          .map((part: JsonRecord) => `${part.name ?? part.artist?.name ?? ""}${part.joinphrase ?? ""}`)
+          .join("").trim();
+        if (!title || !artist || !recording.id) continue;
+        const identity = recordingIdentity(title, artist);
+        if (seen.has(identity)) continue;
+        const release = recording.releases?.[0] ?? {};
+        const releaseDate = String(release.date ?? recording["first-release-date"] ?? "");
+        const tags = [...(recording.tags ?? [])].sort((a: JsonRecord, b: JsonRecord) => Number(b.count ?? 0) - Number(a.count ?? 0));
+        rows.push({
+          track_id: `mb-${recording.id}`,
+          title,
+          artist,
+          album: release.title ?? "",
+          year: /^\d{4}/.test(releaseDate) ? Number(releaseDate.slice(0, 4)) : null,
+          artwork_url: "",
+          preview_url: "",
+          external_url: `https://musicbrainz.org/recording/${recording.id}`,
+          source: "MusicBrainz",
+          provider_genre: tags[0]?.name ?? null,
+          provider_subgenre: tags[0]?.name ?? null,
+          seed_genre: null,
+        });
+        seen.add(identity);
+        if (rows.length >= limit) break;
+      }
+    }
+  }
+  globalSearchCache.set(key, { expiresAt: Date.now() + 15 * 60_000, rows });
+  return rows.slice(0, limit);
 }
 
 function styleFamily(value: string) {
@@ -442,6 +539,18 @@ async function searchTracks(input: JsonRecord) {
     const fingerprint = Array.isArray(row.acoustic_fingerprints) ? row.acoustic_fingerprints[0] : row.acoustic_fingerprints;
     return cleanTrack(row, fingerprint);
   });
+  if (q && page === 1 && results.length < pageSize) {
+    const seen = new Set(results.map((track: JsonRecord) => recordingIdentity(track.title, track.artist)));
+    const external = await searchGlobalCatalogue(q, pageSize);
+    for (const track of external) {
+      const identity = recordingIdentity(track.title, track.artist);
+      if (seen.has(identity)) continue;
+      results.push(cleanTrack(track));
+      seen.add(identity);
+      if (results.length >= pageSize) break;
+    }
+  }
+  total = Math.max(total, results.length);
   return { results, total, page, page_size: pageSize };
 }
 
@@ -873,6 +982,8 @@ async function handleAction(input: JsonRecord, request: Request) {
     return {
       genres: [...new Set(library.map((row) => row.profile.texture).filter(Boolean))].sort(),
       subgenres: [...new Set(library.map((row) => row.acoustic_signature).filter(Boolean))].sort(),
+      genre_families: Object.keys(styleFamilies).sort(),
+      provider_taxonomy: providerTaxonomy,
       dimensions: ["tempo", "intensity", "texture", "rhythm character", "harmonic character", "lyrical themes"],
     };
   }

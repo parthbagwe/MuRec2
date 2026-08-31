@@ -24,7 +24,8 @@ from src.api.schemas import (
 )
 from src.config import HYBRID_WEIGHTS
 from src.features.audio_analysis import analyze_audio
-from src.catalog import search_apple
+from src.catalog import search_global_catalog
+from src.subgenres import ALL_SUBGENRES, FAMILIES
 from src.acoustic_index import MODE_WEIGHTS as ACOUSTIC_MODE_WEIGHTS
 from src.auth import optional_user
 from src.user_store import record_recommendation, seen_track_ids, taste_profile
@@ -123,6 +124,8 @@ def get_genres():
     return {
         "genres": sorted({profile["texture"] for profile in profiles}),
         "subgenres": sorted({item["acoustic_signature"] for item in fingerprints.values()}),
+        "genre_families": sorted(FAMILIES),
+        "provider_taxonomy": list(ALL_SUBGENRES),
         "dimensions": ["tempo", "intensity", "texture", "rhythm character", "harmonic character"],
     }
 
@@ -170,10 +173,11 @@ def get_tracks(
     paginated = filtered.iloc[start:start + page_size]
     result_rows = [row.to_dict() for _, row in paginated.iterrows()]
 
-    # Supplement sparse local matches with a live, cached Apple search.
+    # Supplement sparse local matches with global metadata. Playback is still
+    # limited to provider-supplied 30-second preview URLs.
     if q and page == 1 and len(result_rows) < page_size:
         try:
-            live_rows = search_apple(q, limit=min(25, page_size))
+            live_rows = search_global_catalog(q, limit=min(25, page_size))
             known_ids = {str(row["track_id"]) for row in result_rows}
             known_recordings = {_recording_key(row) for row in result_rows}
             for row in live_rows:

@@ -787,7 +787,7 @@ footer { max-width: none; margin: 0 28px; border-color: #2c2c2c; }
 
 @media (max-width: 1180px) {
   .app-header { grid-template-columns: auto minmax(320px, 1fr) auto; }
-  .header-links { display: none; }
+  .app-header .header-links { display: none; }
   .app-layout { grid-template-columns: 238px minmax(0, 1fr); }
   .discover-copy { padding-left: 36px; }
   .hero-orbit { opacity: .68; }
@@ -841,4 +841,122 @@ footer { max-width: none; margin: 0 28px; border-color: #2c2c2c; }
 
 @media (max-width: 390px) {
   .recommendation-grid { grid-template-columns: 1fr; }
+}
+
+/* Phone composition: intentionally isolated so the desktop experience is unchanged. */
+@media (max-width: 600px) {
+  .app-shell { padding-bottom: 112px; overflow-x: clip; }
+  .app-header {
+    height: auto;
+    min-height: 116px;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: 46px 54px;
+    gap: 7px 10px;
+    padding: 7px 12px 9px;
+  }
+  .header-brand-cluster { grid-column: 1; grid-row: 1; }
+  .app-header .header-links { display: none; }
+  .logo strong { display: inline; font-size: 17px; }
+  .logo > span { width: 38px; height: 38px; }
+  .account-nav { grid-column: 2; grid-row: 1; }
+  .account-nav .text-button, .account-name { display: none; }
+  .account-nav .header-button { width: auto; min-width: 68px; height: 38px; padding: 0 14px; font-size: 11px; }
+  .account-nav .header-button::after { content: none; }
+  .header-search { z-index: 95; grid-column: 1 / -1; grid-row: 2; }
+  .header-search .search-wrap > input { height: 48px; padding: 0 48px; font-size: 16px; }
+  .header-search .search-icon { top: 13px; }
+  .header-search .search-results { top: 55px; right: 0; left: 0; max-height: calc(100dvh - 205px); }
+
+  .app-layout { min-height: calc(100vh - 116px); padding: 0; }
+  .app-content { border-radius: 0; }
+  .discover-hero, .discover-copy { min-height: 278px; }
+  .discover-copy { justify-content: center; padding: 34px 20px 30px; }
+  .discover-copy h1 { max-width: 330px; margin-top: 12px; font-size: clamp(42px, 13vw, 58px); line-height: .93; }
+  .discover-copy > p:last-of-type { max-width: 310px; margin-top: 15px; font-size: 12px; }
+  .hero-eyebrow { font-size: 9px; }
+  .hero-actions { margin-top: 18px; }
+  .hero-actions a { min-height: 44px; padding-inline: 15px; font-size: 11px; }
+  .hero-orbit { right: -108px; bottom: -134px; opacity: .24; }
+
+  .workspace { padding: 14px 12px 44px; }
+  .controls-card { gap: 18px; margin-bottom: 18px; padding: 15px; }
+  .reference-preview { grid-template-columns: 82px minmax(0, 1fr); gap: 13px; }
+  .reference-preview .artwork-disc { width: 82px; height: 82px; }
+  .reference-preview-copy h2 { font-size: 20px; }
+  .reference-preview-copy p { font-size: 10px; line-height: 1.35; }
+  .reference-preview-actions { flex-wrap: wrap; gap: 6px; }
+  .reference-preview-actions button, .reference-preview-actions a { min-height: 42px; padding-inline: 12px; }
+  .recommendation-actions { gap: 10px; }
+  .primary-button, .advanced-toggle { min-height: 46px; }
+
+  .mode-section { margin-bottom: 8px; overflow: visible; }
+  .section-title { padding: 17px 2px 12px; }
+  .section-title h2 { font-size: 29px; }
+  .mode-selector {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 0 1px 9px;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+  .mode-selector::-webkit-scrollbar { display: none; }
+  .mode-selector button {
+    flex: 0 0 min(76vw, 280px);
+    min-height: 108px;
+    border: 0 !important;
+    scroll-snap-align: start;
+  }
+  .mode-feedback { min-height: 20px; }
+
+  .results-heading { padding: 28px 2px 14px; }
+  .results-heading h2 { font-size: 27px; }
+  .recommendation-grid { grid-template-columns: 1fr; gap: 9px; }
+  .recommendation-card { border-radius: 10px; }
+  .card-main { padding: 10px; }
+  .track-identity { grid-template-columns: 96px minmax(0, 1fr); gap: 13px; align-items: center; }
+  .artwork-disc { width: 96px; height: 96px; }
+  .track-identity h3 { font-size: 16px; line-height: 1.15; }
+  .track-identity p { margin-top: 5px; font-size: 12px; }
+  .track-identity small { display: block; margin-top: 6px; font-size: 8px; }
+  .card-heading { top: 16px; right: 15px; left: 15px; }
+  .score { margin-left: 3px; }
+  .favorite-button { width: 38px; height: 38px; }
+  .match-reasons { margin-left: 109px; }
+  .card-actions button, .card-actions a { min-height: 46px; font-size: 9px; }
+  .dismiss-button { grid-column: auto; border-top: 0 !important; }
+
+  .secondary-experiences { padding: 0 12px 48px; }
+  .secondary-heading { padding: 28px 4px 18px; }
+  .secondary-heading h2 { font-size: 29px; }
+  .secondary-heading > p { font-size: 11px; }
+  .secondary-grid { min-height: 0; }
+  .secondary-grid .sound-bridge { min-height: 500px; padding: 24px 16px; }
+  .charts-panel { min-height: 450px; }
+  footer { margin-inline: 12px; padding-bottom: 28px; }
+
+  .mix-player { right: 0; bottom: 0; left: 0; }
+  .mix-player-bar { min-height: 96px; border-radius: 0; grid-template-columns: minmax(0, 1fr) auto; }
+  .mix-now { min-width: 0; padding: 9px 12px 8px; }
+  .mix-now small { display: none; }
+  .mix-now strong { font-size: 12px; }
+  .mix-artwork { flex-basis: 48px; width: 48px; height: 48px; }
+  .mix-controls { right: 92px; top: 13px; }
+  .mix-controls button { width: 44px; height: 44px; }
+  .mix-controls .mix-play { width: 46px; height: 46px; }
+  .mix-transport { padding: 3px 12px 7px; }
+  .mix-progress { grid-template-columns: 27px 1fr 27px; }
+  .mix-actions { min-width: 88px; }
+  .visuals-button { min-width: 48px; padding: 0 8px; font-size: 8px; }
+  .queue-button { min-width: 44px; padding: 0 7px; font-size: 0; }
+  .queue-button::before { content: "Queue"; font-size: 8px; }
+  .queue-button strong { font-size: 9px; }
+  .mix-queue { right: 8px; bottom: calc(100% + 8px); width: calc(100vw - 16px); max-height: calc(100dvh - 138px); }
+  .mix-queue li > button { min-height: 66px; grid-template-columns: 28px minmax(0, 1fr); padding: 10px 13px; }
+
+  .heightmap-title { top: 74px; }
+  .heightmap-title h2 { max-width: calc(100vw - 32px); font-size: clamp(34px, 14vw, 58px); white-space: normal; }
+  .heightmap-deck { min-height: 122px; grid-template-columns: minmax(0, 1fr) auto; }
+  .heightmap-now { padding: 12px; }
+  .heightmap-transport { padding: 9px 11px; }
 }

@@ -1,4 +1,4 @@
-"""Real-song catalogue loading, live Apple search, and metadata recommendations."""
+"""Real-song catalogue loading and live, provider-neutral metadata search."""
 
 from functools import lru_cache
 import math
@@ -11,6 +11,8 @@ from src.config import APPLE_CATALOG_PATH
 from src.subgenres import infer_subgenre, subgenre_similarity
 
 APPLE_SEARCH_URL = "https://itunes.apple.com/search"
+MUSICBRAINZ_SEARCH_URL = "https://musicbrainz.org/ws/2/recording/"
+SEARCH_STOREFRONTS = ("IN", "US", "GB")
 
 
 def load_catalog() -> pd.DataFrame:
@@ -48,6 +50,11 @@ def _normalize(result: dict) -> dict | None:
     }
 
 
+def _recording_identity(title: str, artist: str) -> tuple[str, str]:
+    clean = lambda value: re.sub(r"[^a-z0-9]+", " ", str(value).casefold()).strip()
+    return clean(title), clean(artist)
+
+
 @lru_cache(maxsize=128)
 def search_apple(query: str, country: str = "IN", limit: int = 25) -> tuple[dict, ...]:
     response = requests.get(
@@ -59,6 +66,72 @@ def search_apple(query: str, country: str = "IN", limit: int = 25) -> tuple[dict
     response.raise_for_status()
     rows = [_normalize(result) for result in response.json().get("results", [])]
     return tuple(row for row in rows if row)
+
+
+@lru_cache(maxsize=256)
+def search_global_catalog(query: str, limit: int = 25) -> tuple[dict, ...]:
+    """Search several iTunes storefronts, then fill metadata gaps with MusicBrainz.
+
+    MusicBrainz is the global identity layer and does not require an API key.
+    Playback remains limited to provider-supplied 30-second preview URLs.
+    """
+    results: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    for storefront in SEARCH_STOREFRONTS:
+        try:
+            apple_rows = search_apple(query, storefront, limit)
+        except requests.RequestException:
+            continue
+        for row in apple_rows:
+            key = _recording_identity(row["title"], row["artist"])
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(row)
+            if len(results) >= limit:
+                return tuple(results)
+
+    try:
+        response = requests.get(
+            MUSICBRAINZ_SEARCH_URL,
+            params={"query": query, "fmt": "json", "limit": min(limit, 25)},
+            headers={"User-Agent": "Cerum/3.0 (https://cerum.vercel.app)"},
+            timeout=12,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return tuple(results)
+    for recording in response.json().get("recordings", []):
+        title = str(recording.get("title") or "").strip()
+        credits = recording.get("artist-credit") or []
+        artist = "".join(
+            str(part.get("name") or part.get("artist", {}).get("name") or "") + str(part.get("joinphrase") or "")
+            for part in credits if isinstance(part, dict)
+        ).strip()
+        recording_id = str(recording.get("id") or "").strip()
+        if not title or not artist or not recording_id:
+            continue
+        key = _recording_identity(title, artist)
+        if key in seen:
+            continue
+        release = next(iter(recording.get("releases") or []), {})
+        release_date = str(release.get("date") or recording.get("first-release-date") or "")
+        tags = sorted(recording.get("tags") or [], key=lambda item: item.get("count", 0), reverse=True)
+        provider_genre = str(tags[0].get("name") or "") if tags else ""
+        results.append({
+            "track_id": f"mb-{recording_id}", "title": title, "artist": artist,
+            "album": release.get("title", ""), "genre": provider_genre or "Audio analysis pending",
+            "subgenre": infer_subgenre(artist, provider_genre, "", title), "seed_genre": "",
+            "year": int(release_date[:4]) if release_date[:4].isdigit() else None,
+            "duration_ms": recording.get("length"), "artwork_url": "", "preview_url": "",
+            "external_url": f"https://musicbrainz.org/recording/{recording_id}",
+            "source": "MusicBrainz", "provider_genre": provider_genre or None,
+        })
+        seen.add(key)
+        if len(results) >= limit:
+            break
+    return tuple(results)
 
 
 def _number(value, default: float) -> float:

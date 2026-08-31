@@ -74,3 +74,4 @@ htmlcov/
 *.tmp
 *.bak
 .catalog-work/
+supabase/.temp/

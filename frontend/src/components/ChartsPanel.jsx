@@ -60,6 +60,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
     setPlayingId(track.track_id);
     onPreviewChange(track);
     audio.onended = () => { setPlayingId(null); onPreviewChange(null); onInteraction(track, "preview_completed"); };
+    audio.ontimeupdate = () => { if (audio.currentTime >= 30) { audio.pause(); audio.onended(); } };
     try { await audio.play(); onInteraction(track, "preview_started"); }
     catch { setPlayingId(null); onPreviewChange(null); }
   }
