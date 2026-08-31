@@ -114,7 +114,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
         value={query}
         onChange={(event) => { setQuery(event.target.value); setShowAll(false); }}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.nativeEvent.isComposing && results[0]) {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing && results[0]?.preview_url) {
             event.preventDefault();
             select(results[0]);
           }
@@ -126,10 +126,10 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
         <div className="search-results">
           {results.length ? <div className="search-results-label"><span>Best matches</span><small>Enter selects the first result</small></div> : null}
           {(showAll ? results : results.slice(0, 8)).map((track) => (
-            <button key={track.track_id} onClick={() => select(track)}>
+            <button key={track.track_id} onClick={() => select(track)} disabled={!track.preview_url} title={track.preview_url ? "Play a 30-second preview" : "Global catalogue match; no licensed preview is available"}>
               {track.artwork_url ? <img src={track.artwork_url} alt="" /> : <span className="search-artwork">{track.title.slice(0, 1)}</span>}
               <span><strong>{track.title}</strong><small>{track.artist} · {track.provider_genre || "Genre pending"}</small></span>
-              <em>{track.year}</em>
+              <em>{track.preview_url ? "30s" : "catalogue"}</em>
             </button>
           ))}
           {results.length > 8 ? <button className="search-more" type="button" onClick={() => setShowAll((open) => !open)}>{showAll ? "Show fewer results" : `Show all ${results.length} results`}<span>{showAll ? "↑" : "↓"}</span></button> : null}

@@ -635,6 +635,7 @@ footer a:hover { color: var(--acid); }
 .header-search .search-results-label { border-color: #424242; color: #aaa; }
 .header-search .search-results button { border-color: #3b3b3b; background: #282828; color: #fff; }
 .header-search .search-results button:hover { background: #3b3b3b; color: #fff; }
+.header-search .search-results button:disabled { opacity: .62; cursor: not-allowed; }
 .header-search .search-results small, .header-search .search-results em { color: #aaa; }
 .header-search .search-results .search-more { background: #202020; }
 .header-search .unknown-song { color: #c9c9c9; }
