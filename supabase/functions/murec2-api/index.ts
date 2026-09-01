@@ -259,6 +259,80 @@ function recordingIdentity(title: unknown, artist: unknown) {
   return `${baseTitle}::${artistKey}`;
 }
 
+function normalizedSearchText(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/['’`]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function editSimilarity(first: string, second: string) {
+  if (first === second) return 1;
+  if (!first || !second) return 0;
+  const left = first.slice(0, 180);
+  const right = second.slice(0, 180);
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+    }
+    previous = current;
+  }
+  return Math.max(0, 1 - previous[right.length] / Math.max(left.length, right.length));
+}
+
+function fuzzyTokenMatch(queryToken: string, candidateToken: string) {
+  if (queryToken === candidateToken) return true;
+  if (queryToken.length < 4 || candidateToken.length < 4) return false;
+  return editSimilarity(queryToken, candidateToken) >= (Math.max(queryToken.length, candidateToken.length) <= 5 ? 0.8 : 0.72);
+}
+
+function tokenCoverage(queryTokens: string[], candidateTokens: string[]) {
+  if (!queryTokens.length) return 0;
+  return queryTokens.filter((queryToken) => candidateTokens.some((candidateToken) => fuzzyTokenMatch(queryToken, candidateToken))).length / queryTokens.length;
+}
+
+function searchRelevance(track: JsonRecord, query: string) {
+  const normalizedQuery = normalizedSearchText(query);
+  const title = normalizedSearchText(track.title);
+  const artist = normalizedSearchText(track.artist);
+  const combined = `${title} ${artist}`.trim();
+  const artistFirst = `${artist} ${title}`.trim();
+  const queryTokens = normalizedQuery.split(" ").filter(Boolean);
+  const titleTokens = title.split(" ").filter(Boolean);
+  const artistTokens = artist.split(" ").filter(Boolean);
+  const combinedTokens = [...titleTokens, ...artistTokens];
+  const coverage = tokenCoverage(queryTokens, combinedTokens);
+  const titleCoverage = tokenCoverage(queryTokens, titleTokens);
+  const artistCoverage = tokenCoverage(queryTokens, artistTokens);
+  let score = coverage * 40 + titleCoverage * 10 + artistCoverage * 6;
+  if (combined === normalizedQuery || artistFirst === normalizedQuery) score += 80;
+  if (title === normalizedQuery) score += 65;
+  if (combined.includes(normalizedQuery) || artistFirst.includes(normalizedQuery)) score += 30;
+  if (normalizedQuery.includes(title) && title.length >= 3) score += 22;
+  if (combined.startsWith(normalizedQuery) || artistFirst.startsWith(normalizedQuery)) score += 12;
+  score += editSimilarity(normalizedQuery, combined) * 14;
+  score += editSimilarity(normalizedQuery, title) * 6;
+  if (coverage < 1) score -= (1 - coverage) * 18;
+  if (track.analysis_status === "complete") score += 0.35;
+  if (track.preview_url) score += 0.15;
+  return score;
+}
+
+function preferSearchDuplicate(first: JsonRecord, second: JsonRecord) {
+  if (first.analysis_status !== second.analysis_status) return first.analysis_status === "complete" ? first : second;
+  if (Boolean(first.preview_url) !== Boolean(second.preview_url)) return first.preview_url ? first : second;
+  return first;
+}
+
 function appleTrack(item: JsonRecord) {
   if (!item.trackId || !item.trackName || !item.artistName || !item.trackViewUrl) return null;
   const release = String(item.releaseDate ?? "");
@@ -279,7 +353,7 @@ function appleTrack(item: JsonRecord) {
 }
 
 async function searchGlobalCatalogue(query: string, limit: number) {
-  const key = normalizedStyle(query);
+  const key = `${normalizedStyle(query)}:${limit}`;
   const cached = globalSearchCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.rows.slice(0, limit);
 
@@ -559,6 +633,7 @@ async function searchTracks(input: JsonRecord) {
   const pageSize = Math.min(100, Math.max(1, Number(input.page_size ?? 20)));
   const selection = "track_id,title,artist,album,year,artwork_url,preview_url,external_url,source,provider_genre,seed_genre,provider_subgenre,acoustic_fingerprints(acoustic_signature,profile)";
   let rows: JsonRecord[] = [];
+  let rankedRows: JsonRecord[] = [];
   let total = 0;
   if (!q) {
     const { data, error, count } = await admin.from("tracks").select(selection, { count: "exact" })
@@ -580,22 +655,31 @@ async function searchTracks(input: JsonRecord) {
       rows = ids.map((id: string) => byId.get(id)).filter(Boolean) as JsonRecord[];
     }
     total = rows.length;
+    rankedRows = rows;
     rows = rows.slice((page - 1) * pageSize, page * pageSize);
   }
-  const results = rows.map((row: JsonRecord) => {
+  let results = rows.map((row: JsonRecord) => {
     const fingerprint = Array.isArray(row.acoustic_fingerprints) ? row.acoustic_fingerprints[0] : row.acoustic_fingerprints;
     return cleanTrack(row, fingerprint);
   });
-  if (q && page === 1 && results.length < pageSize) {
-    const seen = new Set(results.map((track: JsonRecord) => recordingIdentity(track.title, track.artist)));
-    const external = await searchGlobalCatalogue(q, pageSize);
-    for (const track of external) {
+  if (q && page === 1) {
+    const catalogueLimit = Math.min(80, Math.max(40, pageSize * 2));
+    const external = await searchGlobalCatalogue(q, catalogueLimit);
+    const databaseResults = rankedRows.map((row: JsonRecord) => {
+      const fingerprint = Array.isArray(row.acoustic_fingerprints) ? row.acoustic_fingerprints[0] : row.acoustic_fingerprints;
+      return cleanTrack(row, fingerprint);
+    });
+    const merged = new Map<string, { track: JsonRecord; order: number }>();
+    [...databaseResults, ...external.map((track) => cleanTrack(track))].forEach((track, order) => {
       const identity = recordingIdentity(track.title, track.artist);
-      if (seen.has(identity)) continue;
-      results.push(cleanTrack(track));
-      seen.add(identity);
-      if (results.length >= pageSize) break;
-    }
+      const existing = merged.get(identity);
+      merged.set(identity, existing ? { track: preferSearchDuplicate(existing.track, track), order: existing.order } : { track, order });
+    });
+    results = [...merged.values()]
+      .map((entry) => ({ ...entry, relevance: searchRelevance(entry.track, q) }))
+      .sort((first, second) => second.relevance - first.relevance || first.order - second.order)
+      .slice(0, pageSize)
+      .map((entry) => entry.track);
   }
   total = Math.max(total, results.length);
   return { results, total, page, page_size: pageSize };
