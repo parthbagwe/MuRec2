@@ -10,6 +10,8 @@ import MixPlayer from "./components/MixPlayer";
 import ChartsPanel from "./components/ChartsPanel";
 import SoundBridge from "./components/SoundBridge";
 import GenreGate from "./components/GenreGate";
+import AnalysisLoading from "./components/AnalysisLoading";
+import { analyzePreview } from "./audio/transitionAnalyzer";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -82,7 +84,9 @@ export default function App() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [autoPlayToken, setAutoPlayToken] = useState(0);
   const [playbackHandoff, setPlaybackHandoff] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(null);
   const recommendationRequest = useRef(0);
+  const liveFingerprintCache = useRef(new Map());
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
   const weightLabels = { audio: "rhythm", lyric: "timbre", collab: "harmony" };
@@ -108,6 +112,8 @@ export default function App() {
   }
 
   function stageSelection(track, handoff = null) {
+    recommendationRequest.current += 1;
+    setAnalysisLoading(null);
     handlePreviewChange(null);
     setSelected(track);
     setRecommendations([]);
@@ -147,21 +153,51 @@ export default function App() {
     setModeFeedback(`Re-ranking by ${MODES.find((item) => item.id === nextMode)?.label || nextMode}`);
     const requestId = ++recommendationRequest.current;
     try {
-      const mixPromise = getRecommendations(track.track_id, 5, nextWeights, "transition", nextGenreScope, true);
+      let recommendationTrack = track;
+      let liveAnchor = null;
+      if (track.analysis_status !== "complete") {
+        if (!track.preview_url) throw new Error("This catalogue result has no playable preview to analyze. Choose a result marked 30-second preview.");
+        const startedAt = performance.now();
+        let fingerprint = liveFingerprintCache.current.get(track.preview_url);
+        if (!fingerprint) {
+          setAnalysisLoading({ track, progress: 0.03, stage: "Preparing the acoustic scan" });
+          const previewProfile = await analyzePreview(track.preview_url, ({ progress, stage }) => {
+            if (requestId === recommendationRequest.current) setAnalysisLoading({ track, progress, stage });
+          });
+          fingerprint = previewProfile.fingerprint;
+          if (!fingerprint) throw new Error("Cerum could not produce an acoustic fingerprint for this preview.");
+          liveFingerprintCache.current.set(track.preview_url, fingerprint);
+          const remaining = 5000 - (performance.now() - startedAt);
+          if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+        }
+        if (requestId !== recommendationRequest.current) return;
+        setAnalysisLoading({ track, progress: 1, stage: "Finding its nearest sound" });
+        recommendationTrack = {
+          ...track,
+          ...fingerprint.profile,
+          acoustic_signature: fingerprint.acoustic_signature,
+          subgenre: fingerprint.acoustic_signature,
+          analysis_status: "transient",
+        };
+        liveAnchor = { track: recommendationTrack, analysis: fingerprint };
+        setSelected(recommendationTrack);
+        setMixQueue([recommendationTrack]);
+      }
+      const mixPromise = getRecommendations(recommendationTrack.track_id, 5, nextWeights, "transition", nextGenreScope, true, liveAnchor);
       const recommendationPromise = nextMode === "transition"
         ? mixPromise
-        : getRecommendations(track.track_id, 12, nextWeights, nextMode, nextGenreScope, true);
+        : getRecommendations(recommendationTrack.track_id, 12, nextWeights, nextMode, nextGenreScope, true, liveAnchor);
       const [recommendationResult, mixResult] = await Promise.allSettled([recommendationPromise, mixPromise]);
       if (requestId !== recommendationRequest.current) return;
-      if (mixResult.status === "fulfilled") setMixQueue([track, ...mixResult.value.data.recommendations.slice(0, 5)]);
+      if (mixResult.status === "fulfilled") setMixQueue([recommendationTrack, ...mixResult.value.data.recommendations.slice(0, 5)]);
       if (recommendationResult.status === "rejected") throw recommendationResult.reason;
       setRecommendations(recommendationResult.value.data.recommendations);
       if (user) getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
     } catch (requestError) {
       setRecommendations([]);
-      setError(requestError.response?.data?.detail || "The API is unavailable. Run start-backend.cmd and try again.");
+      setError(requestError.response?.data?.detail || requestError.message || "The API is unavailable. Run start-backend.cmd and try again.");
     } finally {
-      if (requestId === recommendationRequest.current) { setLoading(false); setMixLoading(false); setModeFeedback(""); }
+      if (requestId === recommendationRequest.current) { setLoading(false); setMixLoading(false); setModeFeedback(""); setAnalysisLoading(null); }
     }
   }
 
@@ -401,6 +437,7 @@ export default function App() {
       <GenreGate track={genrePrompt?.track} onChoose={confirmGenreScope} onCancel={() => setGenrePrompt(null)} />
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={requestGenreChoice} />
+      <AnalysisLoading state={analysisLoading} />
       <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} playbackHandoff={playbackHandoff} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
     </main>
   );

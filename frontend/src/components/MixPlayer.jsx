@@ -225,7 +225,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, [activeIndex, queue]);
 
   useEffect(() => {
-    if (!activeTrack?.preview_url || analysisProfilesRef.current.has(activeTrack.preview_url)) return undefined;
+    if (!activeTrack?.preview_url || activeTrack.analysis_status === "pending" || analysisProfilesRef.current.has(activeTrack.preview_url)) return undefined;
     let cancelled = false;
     analyzePreview(activeTrack.preview_url)
       .then((profile) => {

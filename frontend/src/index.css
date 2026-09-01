@@ -25,7 +25,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 a { color: inherit; }
 
 .app-shell { position: relative; min-height: 100vh; padding-bottom: 112px; isolation: isolate; background: var(--ink); }
-.app-shell > *:not(.mood-color-base, .mood-layer, .flow-field, .modal-backdrop, .mix-player) { position: relative; z-index: 2; }
+.app-shell > *:not(.mood-color-base, .mood-layer, .flow-field, .modal-backdrop, .mix-player, .analysis-loading) { position: relative; z-index: 2; }
 .mood-color-base { position: fixed; z-index: -3; inset: 0; will-change: background-color; }
 .mood-layer {
   position: fixed; z-index: -2; inset: 0;
@@ -960,4 +960,87 @@ footer { max-width: none; margin: 0 28px; border-color: #2c2c2c; }
   .heightmap-deck { min-height: 122px; grid-template-columns: minmax(0, 1fr) auto; }
   .heightmap-now { padding: 12px; }
   .heightmap-transport { padding: 9px 11px; }
+}
+
+/* First-listen analysis: inspired by a musical four-bar loader, restyled for Cerum. */
+.analysis-loading {
+  position: fixed;
+  z-index: 170;
+  inset: var(--header-height, 72px) 0 96px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 28px;
+  background: rgba(7, 7, 7, .94);
+  color: #f8f8f4;
+  backdrop-filter: blur(22px);
+}
+.analysis-loading-glow {
+  position: absolute;
+  width: 760px;
+  height: 760px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--mood-b, #6c57ff) 38%, transparent) 0, transparent 66%);
+  animation: analysis-breathe 2.8s ease-in-out infinite;
+}
+.analysis-loading-inner { position: relative; width: min(1040px, 100%); }
+.analysis-loading header {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #ffffff2e;
+  font: 700 10px/1.2 var(--mono, monospace);
+  letter-spacing: .16em;
+}
+.analysis-loading header strong { color: #dfff30; }
+.analysis-loading-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(320px, .8fr); gap: clamp(42px, 8vw, 110px); align-items: center; padding: 50px 0 18px; }
+.musical-loader { position: relative; display: flex; align-items: center; justify-content: center; gap: clamp(10px, 1.6vw, 22px); height: 300px; perspective: 700px; }
+.musical-loader i {
+  width: clamp(42px, 7vw, 84px);
+  height: clamp(120px, 17vw, 210px);
+  border-radius: 10px;
+  transform-origin: center bottom;
+  box-shadow: 0 24px 44px #0008;
+  animation: musical-analyze 1.28s cubic-bezier(.5, 0, .2, 1) infinite alternate;
+}
+.musical-loader i:nth-child(1) { background: #f13f70; animation-delay: -.96s; }
+.musical-loader i:nth-child(2) { background: #278dad; animation-delay: -.64s; }
+.musical-loader i:nth-child(3) { background: #11d2a3; animation-delay: -.32s; }
+.musical-loader i:nth-child(4) { background: #ffd46b; }
+.loader-floor { position: absolute; right: 6%; bottom: 20px; left: 6%; height: 1px; background: linear-gradient(90deg, transparent, #fff8, transparent); }
+.analysis-loading-copy > p { margin: 0 0 12px; color: #dfff30; font: 700 9px/1.2 var(--mono, monospace); letter-spacing: .14em; text-transform: uppercase; }
+.analysis-loading-copy h2 { max-width: 570px; margin: 0; font-size: clamp(38px, 6vw, 78px); line-height: .9; letter-spacing: -.065em; }
+.analysis-loading-copy h3 { margin: 14px 0 34px; color: #aeaeae; font-size: clamp(15px, 2vw, 22px); font-weight: 500; }
+.analysis-stage { display: flex; justify-content: space-between; gap: 20px; font: 700 10px/1.2 var(--mono, monospace); letter-spacing: .08em; text-transform: uppercase; }
+.analysis-stage b { color: #dfff30; }
+.analysis-progress { overflow: hidden; height: 4px; margin: 10px 0 20px; background: #ffffff20; }
+.analysis-progress i { display: block; height: 100%; background: #dfff30; transition: width .45s cubic-bezier(.3, .8, .2, 1); }
+.analysis-loading-copy ol { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.analysis-loading-copy li { color: #747474; font: 700 8px/1.2 var(--mono, monospace); letter-spacing: .04em; text-transform: uppercase; transition: color .3s ease; }
+.analysis-loading-copy li span { display: block; width: 5px; height: 5px; margin-bottom: 8px; border-radius: 50%; background: #444; transition: background .3s ease, box-shadow .3s ease; }
+.analysis-loading-copy li.complete { color: #fff; }
+.analysis-loading-copy li.complete span { background: #dfff30; box-shadow: 0 0 14px #dfff30; }
+.analysis-loading-copy small { display: block; max-width: 500px; margin-top: 28px; color: #8f8f8f; font-size: 10px; line-height: 1.5; }
+
+@keyframes musical-analyze {
+  0% { transform: translateY(54px) rotate(-8deg) scaleY(.62); filter: saturate(.8); }
+  100% { transform: translateY(-34px) rotate(8deg) scaleY(1); filter: saturate(1.15); }
+}
+@keyframes analysis-breathe { 50% { transform: scale(1.12); opacity: .72; } }
+
+@media (max-width: 700px) {
+  .analysis-loading { inset: 116px 0 96px; align-items: start; padding: 18px 16px; overflow-y: auto; }
+  .analysis-loading-grid { grid-template-columns: 1fr; gap: 12px; padding-top: 18px; }
+  .musical-loader { height: 190px; }
+  .musical-loader i { width: min(15vw, 58px); height: min(34vw, 145px); }
+  .loader-floor { bottom: 8px; }
+  .analysis-loading-copy h2 { font-size: clamp(38px, 12vw, 58px); }
+  .analysis-loading-copy h3 { margin: 9px 0 22px; }
+  .analysis-loading-copy small { margin-top: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .musical-loader i, .analysis-loading-glow { animation: none; }
+  .musical-loader i:nth-child(1), .musical-loader i:nth-child(3) { transform: translateY(-18px); }
+  .musical-loader i:nth-child(2), .musical-loader i:nth-child(4) { transform: translateY(18px); }
 }

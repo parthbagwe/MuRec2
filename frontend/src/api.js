@@ -45,8 +45,11 @@ export const getTrack = (track_id) => hostedApiEnabled
   ? edge("track", { track_id })
   : api.get(`/tracks/${track_id}`);
 
-export const getRecommendations = (track_id, k = 10, weights = null, mode = "similar", genre_scope = "nearby", vibe_lock = true) => hostedApiEnabled
-  ? edge("recommend", { track_id, k, weights, mode, genre_scope, vibe_lock })
+export const getRecommendations = (track_id, k = 10, weights = null, mode = "similar", genre_scope = "nearby", vibe_lock = true, liveAnchor = null) => hostedApiEnabled
+  ? edge("recommend", {
+    track_id, k, weights, mode, genre_scope, vibe_lock,
+    ...(liveAnchor ? { anchor_track: liveAnchor.track, anchor_analysis: liveAnchor.analysis } : {}),
+  })
   : api.post("/recommend", { track_id, k, weights, mode, genre_scope, vibe_lock });
 
 export const getSoundBridge = async (track_id, destination_track_id) => {

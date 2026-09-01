@@ -132,6 +132,51 @@ function cleanTrack(track: JsonRecord, fingerprint?: JsonRecord | null) {
   };
 }
 
+function transientAnchor(input: JsonRecord) {
+  const track = input.anchor_track;
+  const analysis = input.anchor_analysis;
+  if (!track || !analysis) return null;
+  const trackId = String(input.track_id ?? "");
+  if (!trackId || String(track.track_id ?? "") !== trackId) throw new ApiError(422, "The live analysis does not match the selected track");
+  const vector = Array.isArray(analysis.vector) ? analysis.vector.map(Number) : [];
+  if (vector.length !== 35 || vector.some((value: number) => !Number.isFinite(value) || Math.abs(value) > 1_000_000)) {
+    throw new ApiError(422, "The live acoustic fingerprint is invalid");
+  }
+  const rawProfile = analysis.profile ?? {};
+  const numericKeys = [
+    "bpm", "energy", "brightness", "spectral_centroid_hz", "spectral_rolloff_hz", "zero_crossing_rate",
+    "tempo_confidence", "spectral_flatness", "spectral_contrast", "onset_density", "beat_regularity",
+    "dynamic_range", "harmonic_ratio", "percussive_ratio", "tonal_strength", "danceability", "aggression",
+  ];
+  const profile: JsonRecord = {};
+  for (const key of numericKeys) {
+    const value = Number(rawProfile[key]);
+    if (!Number.isFinite(value)) throw new ApiError(422, `The live acoustic profile is missing ${key}`);
+    profile[key] = value;
+  }
+  for (const key of ["key", "mode", "timbre", "texture", "tempo_band", "intensity", "rhythm_character", "harmonic_character"]) {
+    profile[key] = String(rawProfile[key] ?? "unknown").slice(0, 64);
+  }
+  profile.analysis_source = "client-preview-v1";
+  const acousticSignature = String(analysis.acoustic_signature ?? rawProfile.acoustic_signature ?? "live acoustic scan").slice(0, 240);
+  profile.acoustic_signature = acousticSignature;
+  const safeTrack = {
+    track_id: trackId,
+    title: String(track.title ?? "Unknown title").slice(0, 180),
+    artist: String(track.artist ?? "Unknown artist").slice(0, 180),
+    album: String(track.album ?? "").slice(0, 240),
+    year: Number.isFinite(Number(track.year)) ? Number(track.year) : null,
+    artwork_url: String(track.artwork_url ?? "").slice(0, 1200),
+    preview_url: String(track.preview_url ?? "").slice(0, 1200),
+    external_url: String(track.external_url ?? "").slice(0, 1200),
+    source: String(track.source ?? "Live preview").slice(0, 80),
+    provider_genre: String(track.provider_genre ?? "").slice(0, 120),
+    provider_subgenre: String(track.provider_subgenre ?? track.provider_genre ?? "").slice(0, 120),
+    seed_genre: String(track.seed_genre ?? "").slice(0, 120),
+  };
+  return { track_id: trackId, track: safeTrack, vector, profile, acoustic_signature: acousticSignature, lyrics: null };
+}
+
 async function loadLibrary() {
   if (libraryCache && Date.now() - libraryCachedAt < 5 * 60_000) return libraryCache;
   const rows: JsonRecord[] = [];
@@ -439,7 +484,8 @@ function transitionMetrics(previous: JsonRecord, candidate: JsonRecord, anchor: 
   const tempo = Math.exp(-tempoDifference / 12);
   const chromaDirect = Math.max(0, cosine(previous.vector.slice(23, 35), candidate.vector.slice(23, 35)));
   const key = keyCompatibility(previous, candidate);
-  const harmony = Math.max(0, Math.min(1, 0.72 * key + 0.28 * chromaDirect));
+  const livePreview = previous.profile.analysis_source === "client-preview-v1" || candidate.profile.analysis_source === "client-preview-v1";
+  const harmony = Math.max(0, Math.min(1, (livePreview ? 0.86 : 0.72) * key + (livePreview ? 0.14 : 0.28) * chromaDirect));
   const [, timbre] = components(previous, candidate);
   const energy = meanScaledDifference(
     [previousProfile.energy, previousProfile.aggression, previousProfile.dynamic_range, previousProfile.danceability],
@@ -487,7 +533,8 @@ function components(first: JsonRecord, second: JsonRecord): [number, number, num
   const profileA = [a.brightness, a.spectral_flatness, a.spectral_contrast, a.zero_crossing_rate, a.harmonic_ratio, a.aggression, a.dynamic_range];
   const profileB = [b.brightness, b.spectral_flatness, b.spectral_contrast, b.zero_crossing_rate, b.harmonic_ratio, b.aggression, b.dynamic_range];
   const profileSimilarity = meanScaledDifference(profileA, profileB, [1, 0.35, 35, 0.25, 1, 1, 1], 2.2);
-  const timbre = 0.55 * mfcc + 0.45 * profileSimilarity;
+  const livePreview = first.profile.analysis_source === "client-preview-v1" || second.profile.analysis_source === "client-preview-v1";
+  const timbre = (livePreview ? 0.20 : 0.55) * mfcc + (livePreview ? 0.80 : 0.45) * profileSimilarity;
 
   const chromaA = first.vector.slice(23, 35);
   const chromaB = second.vector.slice(23, 35);
@@ -502,7 +549,7 @@ function components(first: JsonRecord, second: JsonRecord): [number, number, num
     [1, 1, 1],
     1.7,
   );
-  const harmony = Math.max(0, Math.min(1, 0.65 * chromaSimilarity + 0.35 * harmonic));
+  const harmony = Math.max(0, Math.min(1, (livePreview ? 0.35 : 0.65) * chromaSimilarity + (livePreview ? 0.65 : 0.35) * harmonic));
   return [rhythm, timbre, harmony];
 }
 
@@ -714,7 +761,7 @@ async function recommend(input: JsonRecord, context: Awaited<ReturnType<typeof u
   const vibeLock = input.vibe_lock !== false;
   const k = Math.min(50, Math.max(1, Number(input.k ?? 12)));
   const library = await loadLibrary();
-  const anchor = library.find((item) => String(item.track_id) === String(input.track_id));
+  const anchor = library.find((item) => String(item.track_id) === String(input.track_id)) ?? transientAnchor(input);
   if (!anchor) throw new ApiError(404, "This track has not been acoustically analyzed yet");
 
   const seen = new Set<string>();
