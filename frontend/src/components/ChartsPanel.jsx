@@ -13,6 +13,7 @@ function PlayIcon({ playing }) {
 export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }) {
   const [region, setRegion] = useState("in");
   const [charts, setCharts] = useState({});
+  const [chartMeta, setChartMeta] = useState({});
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,7 +30,10 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
           const response = await getCharts(region);
-          if (active) setCharts((current) => ({ ...current, [region]: response.data.tracks }));
+          if (active) {
+            setChartMeta((current) => ({ ...current, [region]: { fallback: Boolean(response.data.fallback), stale: Boolean(response.data.stale) } }));
+            setCharts((current) => ({ ...current, [region]: response.data.tracks }));
+          }
           return;
         } catch {
           if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 1200));
@@ -88,7 +92,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
           <motion.div className="chart-state error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} role="alert">
             <span>Feed temporarily quiet</span>
             <strong>{error}</strong>
-            <p>Search and instant playback are still ready.</p>
+            <p>The chart service is temporarily unavailable. Try again shortly.</p>
             <button onClick={() => setRetryToken((value) => value + 1)}>Retry live charts ↗</button>
           </motion.div>
         )}
@@ -108,7 +112,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
         </AnimatePresence>
       </div>
       {tracks.length > 8 && <button className="chart-expand" onClick={() => setExpanded((value) => !value)}>{expanded ? "Collapse chart" : `View all ${tracks.length}`} <span>{expanded ? "↑" : "↓"}</span></button>}
-      <small className="chart-source">Current chart positions from Apple Music’s public RSS feed · recommendations remain Cerum acoustic scores</small>
+      <small className="chart-source">{chartMeta[region]?.stale ? "Last available" : "Current"} chart positions from Apple Music’s public RSS feed · {chartMeta[region]?.fallback ? "Preview mode while the Cerum catalogue is unavailable" : "recommendations remain Cerum acoustic scores"}</small>
     </motion.section>
   );
 }

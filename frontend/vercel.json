@@ -4,6 +4,11 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "outputDirectory": "dist/client",
+  "functions": {
+    "api/charts.js": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
       "source": "/apple-charts",

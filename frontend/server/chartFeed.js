@@ -1,4 +1,21 @@
 const REGIONS = new Set(["in", "us"]);
+const chartCache = new Map();
+
+async function fetchChartFeed(url) {
+  let lastError;
+  for (const timeout of [8_000, 12_000]) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+      if (!response.ok) throw new Error(`Apple chart feed returned ${response.status}`);
+      const data = await response.json();
+      if (!Array.isArray(data?.feed?.results) || !data.feed.results.length) throw new Error("Apple chart feed returned no songs");
+      return data;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
 
 function releaseYear(value) {
   const match = String(value || "").match(/^\d{4}/);
@@ -13,20 +30,25 @@ export async function fetchAppleCharts(countryInput) {
   const country = REGIONS.has(String(countryInput || "").toLowerCase())
     ? String(countryInput).toLowerCase()
     : "us";
+  const cached = chartCache.get(country);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
   const feedUrl = `https://rss.marketingtools.apple.com/api/v2/${country}/music/most-played/50/songs.json`;
-  const feedResponse = await fetch(feedUrl, { signal: AbortSignal.timeout(8_000) });
-  if (!feedResponse.ok) throw new Error(`Apple chart feed returned ${feedResponse.status}`);
-  const feed = await feedResponse.json();
-  const results = Array.isArray(feed?.feed?.results) ? feed.feed.results : [];
-  if (!results.length) throw new Error("Apple chart feed returned no songs");
+  let feed;
+  try {
+    feed = await fetchChartFeed(feedUrl);
+  } catch (error) {
+    if (cached && cached.fetchedAt > Date.now() - 24 * 60 * 60_000) return { ...cached.data, stale: true };
+    throw error;
+  }
+  const results = feed.feed.results;
 
   const ids = results.map((item) => String(item.id || "")).filter(Boolean);
   const lookupById = new Map();
   if (ids.length) {
     const lookupUrl = `https://itunes.apple.com/lookup?id=${ids.join(",")}&country=${country}&entity=song`;
-    const lookupResponse = await fetch(lookupUrl, { signal: AbortSignal.timeout(8_000) }).catch(() => null);
+    const lookupResponse = await fetch(lookupUrl, { signal: AbortSignal.timeout(5_000) }).catch(() => null);
     if (lookupResponse?.ok) {
-      const lookup = await lookupResponse.json();
+      const lookup = await lookupResponse.json().catch(() => ({ results: [] }));
       for (const item of lookup.results || []) {
         if (item.trackId) lookupById.set(String(item.trackId), item);
       }
@@ -60,10 +82,12 @@ export async function fetchAppleCharts(countryInput) {
     };
   });
 
-  return {
+  const data = {
     country,
     updated_at: new Date().toISOString(),
     tracks,
     fallback: true,
   };
+  chartCache.set(country, { data, fetchedAt: Date.now(), expiresAt: Date.now() + 10 * 60_000 });
+  return data;
 }
