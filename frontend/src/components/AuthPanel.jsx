@@ -47,6 +47,7 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
         <p className="kicker">Your Cerum account</p>
         <h2 id="auth-title">{mode === "login" ? "Welcome back" : "Save your listening trail"}</h2>
         <p className="modal-copy">Favourites and recommendation history are securely synced to your Cerum account.</p>
+        {import.meta.env.MODE === "spark" && <p className="modal-copy">This Firebase edition has a separate sign-in. Your account on the original Cerum site has not changed. Up to 100 favourites and your 30 latest mixes are saved here.</p>}
 
         <div className="auth-tabs" aria-label="Account action">
           <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Sign in</button>

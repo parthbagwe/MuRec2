@@ -94,6 +94,18 @@ export default function App() {
   const activeMood = useMemo(() => moodForTrack(moodTrack), [moodTrack]);
 
   useEffect(() => {
+    if (import.meta.env.MODE !== "spark") return undefined;
+    const showStorageWarning = (event) => setError(event.detail);
+    const refreshSavedHistory = () => getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
+    window.addEventListener("cerum-storage-warning", showStorageWarning);
+    window.addEventListener("cerum-history-saved", refreshSavedHistory);
+    return () => {
+      window.removeEventListener("cerum-storage-warning", showStorageWarning);
+      window.removeEventListener("cerum-history-saved", refreshSavedHistory);
+    };
+  }, []);
+
+  useEffect(() => {
     getMe().then((response) => { setUser(response.data.user); if (response.data.user) refreshLibrary(); }).catch(() => {});
     return watchIndexStatus(getAcousticStatus, setIndexStatus);
   }, []);

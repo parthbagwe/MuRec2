@@ -60,6 +60,8 @@ data/splits/*
 frontend/node_modules/
 frontend/build/
 frontend/dist/
+frontend/dist-spark/
+.firebase/
 
 # Cache
 .cache/

@@ -31,7 +31,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
         try {
           const response = await getCharts(region);
           if (active) {
-            setChartMeta((current) => ({ ...current, [region]: { fallback: Boolean(response.data.fallback), stale: Boolean(response.data.stale) } }));
+            setChartMeta((current) => ({ ...current, [region]: { fallback: Boolean(response.data.fallback), stale: Boolean(response.data.stale), snapshot: Boolean(response.data.snapshot), updated_at: response.data.updated_at } }));
             setCharts((current) => ({ ...current, [region]: response.data.tracks }));
           }
           return;
@@ -81,13 +81,13 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
   return (
     <motion.section className={`charts-panel ${error ? "has-error" : ""} ${loading && !tracks.length ? "is-loading" : ""}`} initial={{ opacity: 0, x: 90 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 90, damping: 22, delay: .08 }} aria-labelledby="charts-title">
       <header className="charts-header">
-        <div><p className="kicker">Live chart pulse</p><h2 id="charts-title">Top 50</h2></div>
+        <div><p className="kicker">{import.meta.env.MODE === "spark" ? "Chart snapshot" : "Live chart pulse"}</p><h2 id="charts-title">Top 50</h2></div>
         <div className="chart-tabs" role="tablist" aria-label="Country chart">
           {REGIONS.map((item) => <button key={item.id} role="tab" aria-selected={region === item.id} className={region === item.id ? "active" : ""} onClick={() => { setRegion(item.id); setExpanded(false); }}>{item.label}</button>)}
         </div>
       </header>
       <div className="chart-list-shell">
-        {loading && !tracks.length && <p className="chart-state loading">Loading today’s songs…<span aria-hidden="true" /></p>}
+        {loading && !tracks.length && <p className="chart-state loading">Loading chart songs…<span aria-hidden="true" /></p>}
         {error && (
           <motion.div className="chart-state error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} role="alert">
             <span>Feed temporarily quiet</span>
@@ -112,7 +112,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
         </AnimatePresence>
       </div>
       {tracks.length > 8 && <button className="chart-expand" onClick={() => setExpanded((value) => !value)}>{expanded ? "Collapse chart" : `View all ${tracks.length}`} <span>{expanded ? "↑" : "↓"}</span></button>}
-      <small className="chart-source">{chartMeta[region]?.stale ? "Last available" : "Current"} chart positions from Apple Music’s public RSS feed · {chartMeta[region]?.fallback ? "Preview mode while the Cerum catalogue is unavailable" : "recommendations remain Cerum acoustic scores"}</small>
+      <small className="chart-source">{chartMeta[region]?.snapshot ? `Snapshot from ${new Date(chartMeta[region].updated_at).toLocaleDateString()}` : chartMeta[region]?.stale ? "Last available" : "Current"} chart positions from Apple Music’s public RSS feed · {chartMeta[region]?.fallback ? "Preview mode while the Cerum catalogue is unavailable" : "recommendations remain Cerum acoustic scores"}</small>
     </motion.section>
   );
 }
