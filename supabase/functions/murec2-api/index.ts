@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "@supabase/supabase-js";
 import { corsHeaders } from "@supabase/supabase-js/cors";
+import { cachedLoad, createCatalogue } from "./catalogue.ts";
 
 type JsonRecord = Record<string, any>;
 
@@ -77,8 +78,12 @@ class ApiError extends Error {
   }
 }
 
-let libraryCache: JsonRecord[] | null = null;
-let libraryCachedAt = 0;
+const { loadLibrary, loadGenres, loadTrack } = createCatalogue(admin, (message) => new ApiError(503, message));
+const statusLoads = new Map<string, ReturnType<typeof cachedLoad<JsonRecord>>>();
+function cachedStatus(key: string, loader: () => Promise<JsonRecord>) {
+  if (!statusLoads.has(key)) statusLoads.set(key, cachedLoad(loader, 60_000));
+  return statusLoads.get(key)!.load();
+}
 const chartCache = new Map<string, { expiresAt: number; rows: JsonRecord[] }>();
 const globalSearchCache = new Map<string, { expiresAt: number; rows: JsonRecord[] }>();
 
@@ -177,42 +182,11 @@ function transientAnchor(input: JsonRecord) {
   return { track_id: trackId, track: safeTrack, vector, profile, acoustic_signature: acousticSignature, lyrics: null };
 }
 
-async function loadLibrary() {
-  if (libraryCache && Date.now() - libraryCachedAt < 5 * 60_000) return libraryCache;
-  const rows: JsonRecord[] = [];
-  for (let start = 0; ; start += 1000) {
-    const { data, error } = await admin
-      .from("acoustic_fingerprints")
-      .select("track_id,vector,profile,acoustic_signature,tracks!inner(track_id,title,artist,album,year,artwork_url,preview_url,external_url,source,provider_genre,seed_genre,provider_subgenre)")
-      .range(start, start + 999);
-    if (error) throw new ApiError(503, `Could not load the acoustic library: ${error.message}`);
-    const batch = (data ?? []).map((row: JsonRecord) => ({
-      ...row,
-      track: Array.isArray(row.tracks) ? row.tracks[0] : row.tracks,
-    }));
-    rows.push(...batch);
-    if (batch.length < 1000) break;
-  }
-  const lyricRows: JsonRecord[] = [];
-  for (let start = 0; ; start += 1000) {
-    const { data, error } = await admin.from("lyric_features")
-      .select("track_id,language,instrumental,themes,theme_vector,sentiment,arousal,confidence")
-      .range(start, start + 999);
-    if (error) throw new ApiError(503, `Could not load lyric features: ${error.message}`);
-    lyricRows.push(...(data ?? []));
-    if ((data ?? []).length < 1000) break;
-  }
-  const lyricsByTrack = new Map(lyricRows.map((row) => [String(row.track_id), row]));
-  rows.forEach((row) => { row.lyrics = lyricsByTrack.get(String(row.track_id)) ?? null; });
-  libraryCache = rows;
-  libraryCachedAt = Date.now();
-  return rows;
-}
-
 async function userContext(request: Request) {
   const authorization = request.headers.get("Authorization") ?? "";
   if (!authorization.startsWith("Bearer ")) return null;
   const accessToken = authorization.slice(7).trim();
+  if (!accessToken || accessToken === publishableKey || accessToken === Deno.env.get("SUPABASE_ANON_KEY")) return null;
   const client = createClient(supabaseUrl, publishableKey, {
     auth: { persistSession: false },
     global: { headers: { Authorization: authorization } },
@@ -658,7 +632,7 @@ async function searchTracks(input: JsonRecord) {
     rankedRows = rows;
     rows = rows.slice((page - 1) * pageSize, page * pageSize);
   }
-  let results = rows.map((row: JsonRecord) => {
+  let results: JsonRecord[] = rows.map((row: JsonRecord) => {
     const fingerprint = Array.isArray(row.acoustic_fingerprints) ? row.acoustic_fingerprints[0] : row.acoustic_fingerprints;
     return cleanTrack(row, fingerprint);
   });
@@ -706,7 +680,7 @@ async function chartTracks(input: JsonRecord) {
     chart_items: results.map((item: JsonRecord) => ({ id: String(item.id), title: item.name, artist: item.artistName })),
   });
   if (matchError) throw new ApiError(503, `Could not match the country chart: ${matchError.message}`);
-  const catalogByChartId = new Map((matches ?? []).map((row: JsonRecord) => [String(row.chart_id), row]));
+  const catalogByChartId = new Map<string, JsonRecord>((matches ?? []).map((row: JsonRecord) => [String(row.chart_id), row]));
   const tracks = results.map((item: JsonRecord, index: number) => {
     const lookup = lookupById.get(String(item.id));
     const catalog = catalogByChartId.get(String(item.id));
@@ -1071,48 +1045,53 @@ async function listHistory(context: NonNullable<Awaited<ReturnType<typeof userCo
 
 async function handleAction(input: JsonRecord, request: Request) {
   const action = String(input.action ?? "");
-  const context = await userContext(request);
-  if (action === "health") {
-    const [{ count: tracks }, { count: indexed }] = await Promise.all([
-      admin.from("tracks").select("track_id", { count: "exact" }).limit(1),
+  // Public catalogue/status reads do not need an Auth round trip.
+  const publicActions = new Set(["health", "acousticStatus", "lyricStatus", "tracks", "charts", "track", "genres"]);
+  const context = publicActions.has(action) ? null : await userContext(request);
+  if (action === "health") return cachedStatus(action, async () => {
+    const results = await Promise.all([
+      admin.from("tracks").select("track_id", { count: "exact", head: true }),
       admin.from("acoustic_fingerprints").select("track_id", { count: "exact", head: true }),
     ]);
+    if (results.some((result) => result.error)) throw new ApiError(503, "Could not read catalogue status");
+    const [{ count: tracks }, { count: indexed }] = results;
     return { status: "ok", models_loaded: true, total_tracks: tracks ?? indexed ?? 0, acoustic_indexed: indexed ?? 0, acoustic_indexing: false };
-  }
-  if (action === "acousticStatus") {
-    const [{ count: tracks }, { count: failures }, { count: indexed }] = await Promise.all([
-      admin.from("tracks").select("track_id", { count: "exact" }).limit(1),
-      admin.from("fingerprint_failures").select("track_id", { count: "exact" }).limit(1),
+  });
+  if (action === "acousticStatus") return cachedStatus(action, async () => {
+    const results = await Promise.all([
+      admin.from("tracks").select("track_id", { count: "exact", head: true }),
+      admin.from("fingerprint_failures").select("track_id", { count: "exact", head: true }),
       admin.from("acoustic_fingerprints").select("track_id", { count: "exact", head: true }),
     ]);
+    if (results.some((result) => result.error)) throw new ApiError(503, "Could not read acoustic index status");
+    const [{ count: tracks }, { count: failures }, { count: indexed }] = results;
     const total = tracks ?? indexed ?? 0;
     return { indexed: indexed ?? 0, total, remaining: Math.max(0, total - (indexed ?? 0)), failures: failures ?? 0, building: false };
-  }
+  });
   if (action === "tracks") return searchTracks(input);
   if (action === "charts") return chartTracks(input);
-  if (action === "lyricStatus") {
-    const [{ count: analyzed }, { count: total }] = await Promise.all([
+  if (action === "lyricStatus") return cachedStatus(action, async () => {
+    const results = await Promise.all([
       admin.from("lyric_features").select("track_id", { count: "exact", head: true }),
       admin.from("acoustic_fingerprints").select("track_id", { count: "exact", head: true }),
     ]);
+    if (results.some((result) => result.error)) throw new ApiError(503, "Could not read lyric index status");
+    const [{ count: analyzed }, { count: total }] = results;
     return {
       analyzed: analyzed ?? 0,
       total: total ?? 0,
       provider_configured: Boolean(Deno.env.get("MUSIXMATCH_API_KEY")),
       stores_raw_lyrics: false,
     };
-  }
+  });
   if (action === "track") {
-    const library = await loadLibrary();
-    const row = library.find((item) => String(item.track_id) === String(input.track_id));
+    const row = await loadTrack(String(input.track_id));
     if (!row) throw new ApiError(404, "Track not found");
     return cleanTrack(row.track, row);
   }
   if (action === "genres") {
-    const library = await loadLibrary();
     return {
-      genres: [...new Set(library.map((row) => row.profile.texture).filter(Boolean))].sort(),
-      subgenres: [...new Set(library.map((row) => row.acoustic_signature).filter(Boolean))].sort(),
+      ...await loadGenres(),
       genre_families: Object.keys(styleFamilies).sort(),
       provider_taxonomy: providerTaxonomy,
       dimensions: ["tempo", "intensity", "texture", "rhythm character", "harmonic character", "lyrical themes"],
@@ -1132,8 +1111,7 @@ async function handleAction(input: JsonRecord, request: Request) {
   }
   if (action === "addFavorite") {
     const current = requireUser(context);
-    const library = await loadLibrary();
-    const row = library.find((item) => String(item.track_id) === String(input.track_id));
+    const row = await loadTrack(String(input.track_id));
     if (!row) throw new ApiError(404, "This track is not available in the hosted acoustic catalogue");
     const track = cleanTrack(row.track, row);
     const { error } = await current.client.from("favorites").upsert({

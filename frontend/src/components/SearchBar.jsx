@@ -13,6 +13,8 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
   const preparedAudio = useRef(null);
 
   useEffect(() => {
+    const currentId = ++requestId.current;
+    setLoading(false);
     if (suppressSearch.current) {
       suppressSearch.current = false;
       return undefined;
@@ -23,27 +25,29 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
       setSearchError("");
       return undefined;
     }
-    const currentId = ++requestId.current;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true);
       setSearchError("");
       try {
-        const response = await searchTracks(query.trim(), "", 1);
+        const response = await searchTracks(query.trim(), "", 1, { signal: controller.signal });
         if (currentId === requestId.current) {
           setResults(response.data.results || []);
           setSearched(true);
         }
-      } catch {
-        if (currentId === requestId.current) {
+      } catch (error) {
+        if (!controller.signal.aborted && currentId === requestId.current) {
           setResults([]);
           setSearched(false);
-          setSearchError(hostedApiEnabled ? "Cerum cannot reach the hosted music service. Try again shortly." : "Cerum cannot reach the API. Make sure start-backend.cmd is running.");
+          setSearchError(hostedApiEnabled
+            ? (error.response?.data?.detail || "Cerum cannot reach the hosted music service. Try again shortly.")
+            : "Cerum cannot reach the API. Make sure start-backend.cmd is running.");
         }
       } finally {
         if (currentId === requestId.current) setLoading(false);
       }
-    }, 220);
-    return () => clearTimeout(timer);
+    }, 300);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [query]);
 
   useEffect(() => {

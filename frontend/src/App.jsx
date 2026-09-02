@@ -12,6 +12,7 @@ import SoundBridge from "./components/SoundBridge";
 import GenreGate from "./components/GenreGate";
 import AnalysisLoading from "./components/AnalysisLoading";
 import { analyzePreview } from "./audio/transitionAnalyzer";
+import { watchIndexStatus } from "./indexStatus";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -94,10 +95,7 @@ export default function App() {
 
   useEffect(() => {
     getMe().then((response) => { setUser(response.data.user); if (response.data.user) refreshLibrary(); }).catch(() => {});
-    const updateIndexStatus = () => getAcousticStatus().then((response) => setIndexStatus(response.data)).catch(() => {});
-    updateIndexStatus();
-    const timer = window.setInterval(updateIndexStatus, 10000);
-    return () => window.clearInterval(timer);
+    return watchIndexStatus(getAcousticStatus, setIndexStatus);
   }, []);
 
   async function refreshLibrary() {

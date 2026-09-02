@@ -23,7 +23,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
         working-directory: frontend
-      - run: node --test server/chartFeed.test.js
+      - run: node --test server/chartFeed.test.js src/serviceRequests.test.js ../supabase/functions/murec2-api/*.test.mjs
         working-directory: frontend
       - run: npm run build
         working-directory: frontend

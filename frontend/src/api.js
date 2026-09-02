@@ -1,5 +1,6 @@
 import axios from "axios";
 import { createAccount, currentAccount, signIn, signOut, supabase, supabaseEnabled } from "./supabase";
+import { createHostedRequests } from "./serviceRequests";
 
 export const hostedApiEnabled = import.meta.env.VITE_MUREC2_API === "supabase";
 
@@ -9,20 +10,7 @@ function requestError(message) {
   return error;
 }
 
-async function edge(action, payload = {}) {
-  const { data, error } = await supabase.functions.invoke("murec2-api", {
-    body: { action, ...payload },
-  });
-  if (error) {
-    let message = error.message || "The hosted music service is unavailable.";
-    try {
-      const body = await error.context?.json();
-      message = body?.detail || message;
-    } catch { /* The SDK message is the fallback. */ }
-    throw requestError(message);
-  }
-  return { data };
-}
+const edge = createHostedRequests((name, options) => supabase.functions.invoke(name, options));
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
@@ -37,9 +25,9 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-export const searchTracks = (q, genre, page = 1) => hostedApiEnabled
-  ? edge("tracks", { q, genre, page, page_size: 20 })
-  : api.get("/tracks", { params: { q, genre, page, page_size: 20 } });
+export const searchTracks = (q, genre, page = 1, { signal } = {}) => hostedApiEnabled
+  ? edge("tracks", { q, genre, page, page_size: 20 }, { signal })
+  : api.get("/tracks", { params: { q, genre, page, page_size: 20 }, signal });
 
 export const getTrack = (track_id) => hostedApiEnabled
   ? edge("track", { track_id })
