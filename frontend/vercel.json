@@ -6,6 +6,10 @@
   "outputDirectory": "dist/client",
   "rewrites": [
     {
+      "source": "/apple-charts",
+      "destination": "/api/charts"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

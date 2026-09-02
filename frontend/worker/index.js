@@ -1,6 +1,19 @@
+import { fetchAppleCharts } from "../server/chartFeed.js";
+
 export default {
   async fetch(request) {
     const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === "/apple-charts") {
+      try {
+        const data = await fetchAppleCharts(requestUrl.searchParams.get("country"));
+        return Response.json(data, {
+          headers: { "Cache-Control": "public, max-age=600, s-maxage=600, stale-while-revalidate=3600" },
+        });
+      } catch (error) {
+        console.error("[charts-fallback] Apple feed failed", { message: error instanceof Error ? error.message : String(error) });
+        return Response.json({ detail: "The public chart feed is temporarily unavailable." }, { status: 502 });
+      }
+    }
     if (requestUrl.pathname === "/preview-analysis") {
       const source = requestUrl.searchParams.get("source");
       if (!source) return new Response("Missing preview source.", { status: 400 });

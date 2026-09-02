@@ -74,9 +74,14 @@ export const getGenres = () => hostedApiEnabled ? edge("genres") : api.get("/gen
 
 export const getAcousticStatus = () => hostedApiEnabled ? edge("acousticStatus") : api.get("/acoustic-index/status");
 
-export const getCharts = (country = "us") => hostedApiEnabled
-  ? edge("charts", { country })
-  : Promise.reject(requestError("Country charts are available on the hosted Cerum service."));
+export const getCharts = async (country = "us") => {
+  if (hostedApiEnabled) {
+    try {
+      return await edge("charts", { country });
+    } catch { /* Use the public chart fallback while the hosted catalogue is unavailable. */ }
+  }
+  return axios.get("/apple-charts", { params: { country } });
+};
 
 export const getLyricStatus = () => hostedApiEnabled
   ? edge("lyricStatus")
