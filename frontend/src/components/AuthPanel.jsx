@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { login, register } from "../api";
+import { login, register, accountProviders, defaultAccountProvider } from "../api";
 
 export default function AuthPanel({ open, onClose, onAuthenticated }) {
   const [mode, setMode] = useState("login");
@@ -9,6 +9,7 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [provider, setProvider] = useState(defaultAccountProvider);
 
   useEffect(() => {
     if (open) { setError(""); setMessage(""); }
@@ -23,8 +24,8 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
     setMessage("");
     try {
       const response = mode === "register"
-        ? await register(displayName, email, password)
-        : await login(email, password);
+        ? await register(displayName, email, password, provider)
+        : await login(email, password, provider);
       if (response.data.confirmation_required) {
         setMessage("Check your email and confirm your Cerum account, then return here to sign in.");
         setPassword("");
@@ -46,12 +47,18 @@ export default function AuthPanel({ open, onClose, onAuthenticated }) {
         <button className="modal-close" onClick={onClose} aria-label="Close sign in">×</button>
         <p className="kicker">Your Cerum account</p>
         <h2 id="auth-title">{mode === "login" ? "Welcome back" : "Save your listening trail"}</h2>
-        <p className="modal-copy">Favourites and recommendation history are securely synced to your Cerum account.</p>
+        <p className="modal-copy">{provider === 'firebase' ? 'Firebase accounts save up to 100 favourites and your latest 30 mixes.' : 'Use your original Cerum account to access its existing favourites and history.'} Accounts and saved libraries stay separate.</p>
+        {accountProviders.length > 1 && <div className="auth-tabs" aria-label="Account service">
+          {accountProviders.map((item) => <button key={item} type="button" disabled={submitting} aria-pressed={provider === item}
+            className={provider === item ? 'active' : ''} onClick={() => { setProvider(item); setPassword(''); setError(''); setMessage(''); }}>
+            {item === 'firebase' ? 'Firebase account' : 'Original account · Supabase'}
+          </button>)}
+        </div>}
         {import.meta.env.MODE === "spark" && <p className="modal-copy">This Firebase edition has a separate sign-in. Your account on the original Cerum site has not changed. Up to 100 favourites and your 30 latest mixes are saved here.</p>}
 
         <div className="auth-tabs" aria-label="Account action">
-          <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Sign in</button>
-          <button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Create account</button>
+          <button disabled={submitting} className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Sign in</button>
+          <button disabled={submitting} className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Create account</button>
         </div>
 
         <form onSubmit={submit}>

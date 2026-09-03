@@ -87,6 +87,7 @@ export default function App() {
   const [playbackHandoff, setPlaybackHandoff] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(null);
   const recommendationRequest = useRef(0);
+  const accountRevision = useRef(0);
   const liveFingerprintCache = useRef(new Map());
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
@@ -94,9 +95,8 @@ export default function App() {
   const activeMood = useMemo(() => moodForTrack(moodTrack), [moodTrack]);
 
   useEffect(() => {
-    if (import.meta.env.MODE !== "spark") return undefined;
     const showStorageWarning = (event) => setError(event.detail);
-    const refreshSavedHistory = () => getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
+    const refreshSavedHistory = () => refreshHistory();
     window.addEventListener("cerum-storage-warning", showStorageWarning);
     window.addEventListener("cerum-history-saved", refreshSavedHistory);
     return () => {
@@ -106,18 +106,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    getMe().then((response) => { setUser(response.data.user); if (response.data.user) refreshLibrary(); }).catch(() => {});
-    return watchIndexStatus(getAcousticStatus, setIndexStatus);
+    const revision = accountRevision.current;
+    let active = true;
+    getMe().then((response) => {
+      if (!active || revision !== accountRevision.current) return;
+      setUser(response.data.user); if (response.data.user) refreshLibrary();
+    }).catch(() => {});
+    const stop = watchIndexStatus(getAcousticStatus, setIndexStatus);
+    return () => { active = false; stop(); };
   }, []);
 
+  async function refreshHistory() {
+    const revision = accountRevision.current;
+    try {
+      const result = await getHistory();
+      if (revision === accountRevision.current) setHistory(result.data.history);
+    } catch { /* explicit library refresh reports sync failures */ }
+  }
+
   async function refreshLibrary() {
+    const revision = accountRevision.current;
     try {
       const [favoriteResponse, historyResponse] = await Promise.all([getFavorites(), getHistory()]);
+      if (revision !== accountRevision.current) return;
       setFavorites(favoriteResponse.data.favorites);
       setHistory(historyResponse.data.history);
     } catch {
-      setFavorites([]);
-      setHistory([]);
+      if (revision === accountRevision.current) setError('Your library could not sync. Please retry when your account service is available.');
     }
   }
 
@@ -202,7 +217,7 @@ export default function App() {
       if (mixResult.status === "fulfilled") setMixQueue([recommendationTrack, ...mixResult.value.data.recommendations.slice(0, 5)]);
       if (recommendationResult.status === "rejected") throw recommendationResult.reason;
       setRecommendations(recommendationResult.value.data.recommendations);
-      if (user) getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
+      if (user) refreshHistory();
     } catch (requestError) {
       setRecommendations([]);
       setError(requestError.response?.data?.detail || requestError.message || "The API is unavailable. Run start-backend.cmd and try again.");
@@ -248,7 +263,7 @@ export default function App() {
       const path = response.data.recommendations || [];
       setRecommendations(path);
       setMixQueue([start, ...path]);
-      if (user) getHistory().then((result) => setHistory(result.data.history)).catch(() => {});
+      if (user) refreshHistory();
     } catch (requestError) {
       handoff?.audio.pause();
       if (requestId !== recommendationRequest.current) return;
@@ -303,6 +318,7 @@ export default function App() {
   }
 
   async function signOut() {
+    accountRevision.current++;
     await logout().catch(() => {});
     setUser(null); setFavorites([]); setHistory([]); setLibraryOpen(false);
     setMode("similar"); setSelected(null); setRecommendations([]); setAudioProfile(null); setError(""); setGenreScope(rememberedGenreScope()); setGenrePrompt(null);
@@ -321,8 +337,8 @@ export default function App() {
     setRecommendations((items) => items.filter((item) => item.track_id !== track.track_id));
     if (user) recordEvent(track.track_id, "disliked").catch(() => {});
   }
-  async function eraseHistory() { await clearHistory(); setHistory([]); }
-  function authenticated(account) { setUser(account); refreshLibrary(); }
+  async function eraseHistory() { const revision = accountRevision.current; await clearHistory(); if (revision === accountRevision.current) setHistory([]); }
+  function authenticated(account) { accountRevision.current++; setUser(account); setFavorites([]); setHistory([]); refreshLibrary(); }
 
   return (
     <main className={`app-shell mood-${activeMood.id}`}>
@@ -357,7 +373,7 @@ export default function App() {
         </div>
         <nav className="header-links" aria-label="Primary navigation"><a href="#discover">Discover</a><a href="#mix">Mix studio</a><a href="#charts">Charts</a></nav>
         <nav className="account-nav" aria-label="Account">
-          {user ? <><button className="header-button" onClick={() => setLibraryOpen(true)}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <><button className="text-button" onClick={() => setAuthOpen(true)}>Sign up</button><button className="header-button" onClick={() => setAuthOpen(true)}>Log in</button></>}
+          {user ? <><button className="header-button" onClick={() => setLibraryOpen(true)}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}{user.provider && ` · ${user.provider === 'firebase' ? 'Firebase' : 'Supabase'}`}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <><button className="text-button" onClick={() => setAuthOpen(true)}>Sign up</button><button className="header-button" onClick={() => setAuthOpen(true)}>Log in</button></>}
         </nav>
       </motion.header>
 

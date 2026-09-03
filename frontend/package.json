@@ -12,7 +12,10 @@
     "build:spark": "node scripts/generate-spark-engine.mjs && vite build --config vite.spark.config.js --mode spark",
     "preview:spark": "vite preview --config vite.spark.config.js --mode spark",
     "charts:spark": "node scripts/refresh-spark-charts.mjs",
-    "test:spark": "node --test src/spark/*.test.mjs"
+    "test:spark": "node --test src/spark/*.test.mjs",
+    "dev:dual": "vite --config vite.dual.config.js",
+    "build:dual": "vite build --config vite.dual.config.js",
+    "test:dual": "node --test src/dual/*.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.3",

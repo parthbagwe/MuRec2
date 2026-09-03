@@ -4,6 +4,8 @@ import { createAccount, currentAccount, loginAccount, logoutAccount, loadFavorit
   deleteFavorite, deleteHistory, saveEvent, preferences, saveRecommendation, storageWarning } from "./firebase.js";
 
 export const hostedApiEnabled = true;
+export const accountProviders = ['firebase'];
+export const defaultAccountProvider = 'firebase';
 const response = async (promise) => {
   try { return { data: await promise }; }
   catch (error) {

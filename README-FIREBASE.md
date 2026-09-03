@@ -1,7 +1,8 @@
 # Cerum: independent no-billing Firebase edition
 
-This is the `firebase-spark` working copy. The original checkout at
-`D:/parthbagwe/MuRec2`, Supabase project and Vercel production are unchanged.
+This document describes the independent `firebase-spark` edition. Its Firebase
+Hosting site stays independent. On `main`, see [README-DUAL.md](README-DUAL.md)
+for the combined Vercel site; existing Supabase data is preserved.
 
 ## Status
 

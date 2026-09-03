@@ -318,7 +318,7 @@ h2 { margin: 0; font-size: clamp(24px, 3vw, 42px); font-weight: 600; line-height
 .preview-unavailable { display: grid; color: #77776f; font: 9px var(--mono); place-items: center; }
 .preview-credit { display: block; padding: 8px 20px; border-top: 1px solid #ffffff28; color: #696963; font: 8px var(--mono); }
 
-.modal-backdrop { position: fixed; z-index: 80; inset: 0; display: grid; padding: 24px; background: #000b; backdrop-filter: blur(10px); place-items: center; }
+.modal-backdrop { position: fixed; z-index: 130; inset: 0; display: grid; padding: 24px; background: #000b; backdrop-filter: blur(10px); place-items: center; }
 .modal { position: relative; width: min(440px, 100%); padding: 34px; border: 1px solid var(--ink); background: var(--paper); box-shadow: 10px 10px 0 var(--acid); color: var(--ink); }
 .modal .kicker { color: #5f5f58; }
 .modal-close { position: absolute; top: 15px; right: 16px; width: 30px; height: 30px; padding: 0; border: 0; background: transparent; color: #666; font-size: 26px; line-height: 1; }
@@ -328,6 +328,7 @@ h2 { margin: 0; font-size: clamp(24px, 3vw, 42px); font-weight: 600; line-height
 .auth-tabs button + button { border-left: 1px solid #b7b7af; }
 .auth-tabs button.active { background: var(--ink); color: white; }
 .auth-panel form { display: grid; gap: 15px; }
+.auth-panel { max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; }
 .auth-panel label { display: grid; gap: 6px; color: #666; font: 9px var(--mono); text-transform: uppercase; }
 .auth-panel input { height: 42px; padding: 0 11px; border: 1px solid #b7b7af; border-radius: 0; background: white; color: var(--ink); }
 .auth-panel form > small { margin-top: -8px; color: #666; font-size: 10px; }

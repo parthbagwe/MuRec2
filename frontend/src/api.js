@@ -3,6 +3,8 @@ import { createAccount, currentAccount, signIn, signOut, supabase, supabaseEnabl
 import { createHostedRequests } from "./serviceRequests";
 
 export const hostedApiEnabled = import.meta.env.VITE_MUREC2_API === "supabase";
+export const accountProviders = ['supabase'];
+export const defaultAccountProvider = 'supabase';
 
 function requestError(message) {
   const error = new Error(message);

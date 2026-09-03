@@ -20,7 +20,7 @@ export async function getServices() {
     let config;
     if (import.meta.env.VITE_FIREBASE_CONFIG) config = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
     else {
-      const response = await fetch("/__/firebase/init.json", { signal: AbortSignal.timeout(5_000) });
+      const response = await fetch(import.meta.env.VITE_FIREBASE_CONFIG_URL || "/__/firebase/init.json", { signal: AbortSignal.timeout(5_000) });
       if (!response.ok || !response.headers.get("content-type")?.includes("json")) return null;
       config = await response.json();
     }
@@ -31,7 +31,9 @@ export async function getServices() {
     await auth.authStateReady();
     return { auth, db };
   })().catch(() => null);
-  return services;
+  const result = await services;
+  if (!result) services = undefined;
+  return result;
 }
 
 const account = (user) => user ? {
@@ -100,19 +102,20 @@ async function changeList(kind, transform, expectedUid) {
   preferenceCache = null;
 }
 
-export const loadFavorites = () => readList("favorites");
-export const loadHistory = () => readList("history");
-export const deleteHistory = () => changeList("history", () => []);
-export const deleteFavorite = (trackId) => changeList("favorites", (entries) => entries.filter((row) => row.track_id !== trackId));
+export const loadFavorites = (uid) => readList("favorites", uid);
+export const loadHistory = (uid) => readList("history", uid);
+export const deleteHistory = (uid) => changeList("history", () => [], uid);
+export const deleteFavorite = (trackId, uid) => changeList("favorites", (entries) => entries.filter((row) => row.track_id !== trackId), uid);
 export async function saveFavorite(track, expectedUid) {
   await changeList("favorites", (entries) => [
     { ...track, created_at: new Date().toISOString() }, ...entries.filter((row) => row.track_id !== track.track_id),
   ], expectedUid);
 }
 
-export async function preferences() {
+export async function preferences(expectedUid) {
   const user = await currentAccount();
   if (!user) return null;
+  if (expectedUid && user.id !== expectedUid) throw new Error("Your account changed. Please retry.");
   if (preferenceCache?.uid === user.id && preferenceCache.until > Date.now()) return preferenceCache;
   if (preferencePending?.uid === user.id) return preferencePending.promise;
   const promise = Promise.all([readList("favorites", user.id), readList("history", user.id), readList("interactions", user.id)])
@@ -135,10 +138,11 @@ export async function saveRecommendation(result, mode, uid) {
   await changeList("history", (entries) => [run, ...entries].slice(0, 30), uid);
 }
 
-export async function saveEvent(track_id, event_type) {
+export async function saveEvent(track_id, event_type, expectedUid) {
   if (!["preview_completed", "youtube_opened", "liked", "disliked", "dismissed"].includes(event_type)) return;
   const user = await currentAccount();
   if (!user) return;
+  if (expectedUid && user.id !== expectedUid) throw new Error("Your account changed. Please retry.");
   await changeList("interactions", (entries) => [{ track_id, event_type },
     ...entries.filter((row) => row.track_id !== track_id || row.event_type !== event_type)].slice(0, 100), user.id);
 }

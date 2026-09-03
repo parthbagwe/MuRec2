@@ -1,0 +1,15 @@
+# Vercel needs only the frontend; keep local databases, virtualenvs and credentials off the deployment.
+/*
+!/frontend
+!/frontend/**
+/frontend/node_modules
+/frontend/.vercel
+/frontend/frontend
+/frontend/.wrangler
+/frontend/.openai
+/frontend/dist
+/frontend/dist-dual
+/frontend/dist-spark
+/frontend/.env*
+!/frontend/.env.production
+/frontend/*.log
