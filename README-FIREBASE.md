@@ -5,7 +5,8 @@ This is the `firebase-spark` working copy. The original checkout at
 
 ## Status
 
-- Static Firebase Hosting build prepared; **not deployed until Firebase login and project setup are completed**.
+- Deployed on 3 September 2026: **https://cerum-spark-parth-2026.web.app/**.
+- Firebase project `cerum-spark-parth-2026` (Cerum Free): email/password Auth enabled, default Firestore Standard database in Mumbai (`asia-south1`), classic Firebase Hosting. Billing is disabled with no linked billing account; Firestore reports `freeTier: true`. Optional Analytics is off.
 - 5,896 public catalogue tracks; 5,893 measured acoustic fingerprints from the local read-only database.
 - The public catalogue is about 3.2 MB compressed. It is downloaded on demand and cached in the browser, not loaded from Firestore for every search.
 - The original recommendation/transition scoring functions run in a Web Worker. A parity test compares them with the server source using identical data.
@@ -69,15 +70,31 @@ npx --yes firebase-tools@15.28.2 emulators:exec --project demo-cerum-spark --onl
 
 The tests check owner access, cross-account and guest denial, list limits and invalid writes.
 On this Windows machine the Firestore emulator currently fails to start because Java cannot
-create its loopback socket (`Invalid argument: connect`). These security tests are prepared
-but have **not passed locally**. Run them in a working Java 21 environment before publishing.
-Test real sign-up/sign-in, favourites, history, search and a complete five-song mix on the
-Firebase URL after provisioning, before treating it as a production replacement.
+create its loopback socket (`Invalid argument: connect`). The emulator suite has not passed
+locally. Instead, **25 live Auth/Firestore security checks passed** against the isolated
+Firebase project before Hosting publication. These verified owner create/read/update/delete,
+guest and cross-account denial, all three list limits, invalid writes, forbidden scans,
+password sign-in, and saved-library persistence. Both temporary test accounts and their
+records were removed. Rules also compiled successfully during deployment.
+
+The opt-in live check is `frontend/scripts/test-firebase-live.mjs`. It requires the exact
+`--confirm-project=cerum-spark-parth-2026` argument and public web-app configuration in
+`CERUM_TEST_FIREBASE_CONFIG`. It refuses other projects, never uses admin credentials,
+and cleans up its own temporary accounts/documents. Do not run it against the original site.
+
+Deployed-site verification (3 September 2026): homepage and reserved Firebase configuration
+returned HTTP 200 for the correct isolated project; the catalogue manifest reported 5,896
+tracks. Browser search ranked `modern jam travis scott` first, selecting it started its preview,
+the browser measured the newly found song, recommendations rendered, and the player advanced
+automatically to Lucid Dreams with five songs queued. Playback was paused after the check.
+The full five-song sequence and every device/browser have not been exhaustively tested.
+The 21 existing Spark tests also passed, including original scoring parity and unchanged
+playback/mixing source. The original checkout remains clean at `abbcb1f`.
 
 ## Publishing after Google sign-in
 
 1. Authenticate using the official Firebase CLI login flow.
-2. Create a **separate** Firebase project without billing or Analytics.
+2. Reuse **`cerum-spark-parth-2026`**. Do not create another project or enable billing/Analytics.
 3. Register its web app; enable email/password sign-in. Add the actual Hosting domain to Auth's authorized domains if it is not already present.
 4. Create the default Firestore database in **Standard edition / Native mode**, in a suitable region (for example Mumbai), without billing, in production/locked mode. Deploy `firestore.rules` before enabling public use.
 5. Confirm the project's plan reads **Spark**, and that no billing account is linked.
@@ -85,7 +102,7 @@ Firebase URL after provisioning, before treating it as a production replacement.
 7. From the new checkout root, deploy ONLY to the explicit new project:
 
 ```powershell
-npx --yes firebase-tools@15.28.2 deploy --project NEW_FIREBASE_PROJECT_ID --only hosting,firestore:rules
+npx --yes firebase-tools@15.28.2 deploy --project cerum-spark-parth-2026 --only hosting,firestore:rules,auth
 ```
 
 Do not run Vercel, Supabase deploy/sync scripts, or Sites publishing from this copy.
