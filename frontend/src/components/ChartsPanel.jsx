@@ -81,7 +81,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
   return (
     <motion.section className={`charts-panel ${error ? "has-error" : ""} ${loading && !tracks.length ? "is-loading" : ""}`} initial={{ opacity: 0, x: 90 }} animate={{ opacity: 1, x: 0 }} transition={{ type: "spring", stiffness: 90, damping: 22, delay: .08 }} aria-labelledby="charts-title">
       <header className="charts-header">
-        <div><p className="kicker">{import.meta.env.MODE === "spark" ? "Chart snapshot" : "Live chart pulse"}</p><h2 id="charts-title">Top 50</h2></div>
+        <div><p className="kicker">{chartMeta[region]?.snapshot || import.meta.env.MODE === "spark" ? "Chart snapshot" : "Around the world"}</p><h2 id="charts-title">Top 50</h2></div>
         <div className="chart-tabs" role="tablist" aria-label="Country chart">
           {REGIONS.map((item) => <button key={item.id} role="tab" aria-selected={region === item.id} className={region === item.id ? "active" : ""} onClick={() => { setRegion(item.id); setExpanded(false); }}>{item.label}</button>)}
         </div>

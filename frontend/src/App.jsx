@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, getSoundBridge, hostedApiEnabled, logout, recordEvent, removeFavorite } from "./api";
+import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, getSoundBridge, logout, recordEvent, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
@@ -13,6 +13,8 @@ import GenreGate from "./components/GenreGate";
 import AnalysisLoading from "./components/AnalysisLoading";
 import { analyzePreview } from "./audio/transitionAnalyzer";
 import { watchIndexStatus } from "./indexStatus";
+import DiscoveryHome from "./components/DiscoveryHome";
+import StudioIcon from "./components/StudioIcon";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -362,16 +364,15 @@ export default function App() {
         />
       </AnimatePresence>
       <div className="flow-field" aria-hidden="true" />
+      <a className="skip-link" href="#discover">Skip to music</a>
       <motion.header className="app-header" initial={{ y: -64 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 160, damping: 24 }}>
         <div className="header-brand-cluster">
-          <a className="logo" href="#top" aria-label="Cerum home"><span>C</span><strong>Cerum</strong></a>
-          <a className="home-button" href="#top" aria-label="Home">⌂</a>
+          <a className="logo" href="#top" aria-label="Cerum home"><span><i /><i /><i /><i /></span><strong>cerum<span className="logo-period">.</span></strong></a>
         </div>
         <div className="header-search">
           <SearchBar onSelect={requestGenreChoice} onAnalyze={analyze} analyzing={analyzing} />
           {indexStatus ? <span className="search-health" title={indexStatus.building ? "Acoustic analysis updating" : "Acoustic analysis ready"}><i className={indexStatus.building ? "status-dot building" : "status-dot"} />Acoustic search</span> : null}
         </div>
-        <nav className="header-links" aria-label="Primary navigation"><a href="#discover">Discover</a><a href="#mix">Mix studio</a><a href="#charts">Charts</a></nav>
         <nav className="account-nav" aria-label="Account">
           {user ? <><button className="header-button" onClick={() => setLibraryOpen(true)}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}{user.provider && ` · ${user.provider === 'firebase' ? 'Firebase' : 'Supabase'}`}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <><button className="text-button" onClick={() => setAuthOpen(true)}>Sign up</button><button className="header-button" onClick={() => setAuthOpen(true)}>Log in</button></>}
         </nav>
@@ -379,36 +380,29 @@ export default function App() {
 
       <div className="app-layout">
         <aside className="app-sidebar" aria-label="Cerum library and shortcuts">
-          <div className="sidebar-heading"><strong>Your Library</strong><button onClick={() => user ? setLibraryOpen(true) : setAuthOpen(true)}>＋ Open</button></div>
+          <p className="studio-overline sidebar-label">LISTEN & EXPLORE</p>
+          <nav className="sidebar-shortcuts" aria-label="Library shortcuts">
+            <a className="discover-link" href="#top"><StudioIcon name="discover" />Discover</a>
+            <a className="mix-link" href="#mix"><StudioIcon name="mix" />Mix studio <small>5 tracks</small></a>
+            <a className="charts-link" href="#charts"><StudioIcon name="chart" />Top charts</a>
+          </nav>
+          <div className="sidebar-heading"><strong>Your library</strong><button aria-label="Open your library" onClick={() => user ? setLibraryOpen(true) : setAuthOpen(true)}>+</button></div>
           {user ? (
             <button className="sidebar-library-card" onClick={() => setLibraryOpen(true)}>
-              <span className="sidebar-cover-grid" aria-hidden="true"><i /><i /><i /><i /></span>
+              <span className="sidebar-saved-icon"><StudioIcon name="heart" /></span>
               <span><strong>Saved music</strong><small>{favorites.length} favourites · {history.length} recent mixes</small></span>
             </button>
           ) : (
             <>
-              <div className="sidebar-promo"><strong>Save songs you love</strong><p>Keep favourites and previous recommendations together.</p><button onClick={() => setAuthOpen(true)}>Create your library</button></div>
-              <div className="sidebar-promo"><strong>Your mixes, remembered</strong><p>Sign in to let Cerum learn from what you play.</p><button onClick={() => setAuthOpen(true)}>Sign in</button></div>
+              <div className="sidebar-promo"><StudioIcon name="library" /><strong>A little more you.</strong><p>Your favourites and past mixes, together in one place.</p><button onClick={() => setAuthOpen(true)}>Create your library <StudioIcon name="arrow" /></button></div>
             </>
           )}
-          <nav className="sidebar-shortcuts" aria-label="Library shortcuts">
-            <a href="#discover"><span>◉</span> Discover</a>
-            <a href="#mix"><span>⇄</span> Transition Studio</a>
-            <a href="#charts"><span>↗</span> Top charts</a>
-          </nav>
+          <div className="sidebar-listening-note"><StudioIcon name="headphones" /><strong>Made for a closer listen.</strong><p>Find music through rhythm, texture and feeling.</p></div>
           <div className="sidebar-legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><span>Audio previews only</span></div>
         </aside>
 
         <div className="app-content">
-          <section className="discover-hero" id="top">
-            <motion.div className="discover-copy" initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 88, damping: 22 }}>
-              <p className="hero-eyebrow"><span>Acoustic discovery</span>{activeMood.name}</p>
-              <h1>Your next song,<br /><span>shaped by sound.</span></h1>
-              <p>Search above. Cerum listens to rhythm, texture, harmony and energy, then queues five songs that belong together.</p>
-              <div className="hero-actions"><a href="#discover">Start discovering</a><a href="#mix">Build a transition</a></div>
-            </motion.div>
-            <div className="hero-orbit" aria-hidden="true"><span>C</span><i /><i /><i /></div>
-          </section>
+          <DiscoveryHome onSelect={requestGenreChoice} />
 
           <section className="workspace" id="discover">
         <motion.div className="controls-card" initial={{ opacity: 0, x: 110 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .18 }} transition={{ type: "spring", stiffness: 78, damping: 20 }}>
@@ -416,7 +410,7 @@ export default function App() {
             <p className="kicker">Current song</p>
             {selected
               ? <TrackPreview track={selected} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} />
-              : <div className="empty-current"><h2>Choose a song from search</h2><p>Playback and full-screen sine visuals begin immediately.</p></div>}
+              : <div className="empty-current"><h2>What are you in the mood for?</h2><p>Choose a song above. We’ll take it from there.</p></div>}
           </div>
           <div className="recommendation-actions">
             <span className="preference-label">Recommendation range</span>
@@ -430,7 +424,7 @@ export default function App() {
         </motion.div>
 
         <motion.div className="mode-section" initial={{ opacity: 0, x: -110 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .18 }} transition={{ type: "spring", stiffness: 78, damping: 20 }}>
-          <div className="section-title"><p className="kicker">Match direction</p><h2>Choose the<br />connection.</h2><button className={`personalized-mode ${mode === "personalized" ? "active" : ""}`} onClick={() => chooseMode("personalized")}>{user ? "Use my listening history" : "Sign in for personal picks"} →</button></div>
+          <div className="section-title"><div><p className="kicker">MAKE IT YOURS</p><h2>How should the next song feel?</h2></div><button className={`personalized-mode ${mode === "personalized" ? "active" : ""}`} onClick={() => chooseMode("personalized")}>{user ? "Use my listening history" : "Sign in for personal picks"} →</button></div>
           <div className="mode-selector">
             {MODES.map((item, index) => <motion.button key={item.id} className={mode === item.id ? "active" : ""} aria-pressed={mode === item.id} onClick={() => chooseMode(item.id)} whileHover={{ y: -4 }} whileTap={{ scale: .98 }}><em>{String(index + 1).padStart(2, "0")}</em><strong>{item.label}</strong><span>{item.description}</span></motion.button>)}
           </div>
@@ -440,26 +434,27 @@ export default function App() {
         {mode === "transition" && selected && <div className="transition-explainer"><strong>Your starting song is track 01.</strong><span>Cerum chooses five playable follow-ups in order. Every handoff is scored against the song immediately before it, while the original sound keeps the sequence from drifting.</span></div>}
 
         {error && <div className="notice error" role="alert">{error}</div>}
-        {!error && !selected && <div className="notice">{hostedApiEnabled ? "Search the hosted acoustic catalogue above. Cerum ranks measured sound first, then applies its own microgenre compatibility guardrail—not an Apple or Spotify recommendation score." : "Search the catalogue above. Cerum transiently analyzes an available preview; for a missing or unavailable song, upload audio you are allowed to use. Raw audio is not retained."}</div>}
+        {!error && !selected && <p className="discovery-hint"><StudioIcon name="headphones" />Based on the sound of each preview. Set your genre range when you choose a song.</p>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
-        <motion.div className="results-heading" initial={{ opacity: 0, x: -90 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">{mode === "transition" ? "Ordered transition path" : "Made for this signal"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} songs that fit`) : "Recommendations appear here."}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : "Acoustic match · vibe locked"}</p>}</motion.div>
+        {(selected || recommendations.length > 0) && <motion.div className="results-heading" initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">{mode === "transition" ? "YOUR TRANSITION PATH" : "KEEP THE FEELING GOING"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} songs that fit`) : "Finding your next favourites…"}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : "Acoustic match · vibe locked"}</p>}</motion.div>}
         <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
           {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); requestGenreChoice(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
         </div>
           </section>
 
           <section className="secondary-experiences" id="mix">
-            <header className="secondary-heading"><div><p className="kicker">Transition Studio</p><h2>Build a deliberate journey.</h2></div><p>Start and finish anywhere. Cerum finds three playable handoffs between the songs.</p></header>
+            <header className="secondary-heading"><div><p className="kicker">TAKE THE SCENIC ROUTE</p><h2>The mix studio</h2></div><p>Two songs, with a little discovery in between.</p></header>
             <div className="secondary-grid">
               <SoundBridge building={bridgeLoading} onBuild={buildBridge} />
               <div id="charts"><ChartsPanel onSelect={requestGenreChoice} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} /></div>
             </div>
           </section>
 
-          <footer><span>Cerum · Acoustic scoring with fine-style guardrails · Raw audio is not retained</span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
+          <footer><span>cerum. <span>For the love of finding music.</span></span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
         </div>
       </div>
+      <nav className="mobile-dock" aria-label="Mobile navigation"><a href="#top"><StudioIcon name="discover" /><span>Discover</span></a><a href="#mix"><StudioIcon name="mix" /><span>Mix studio</span></a><a href="#charts"><StudioIcon name="chart" /><span>Charts</span></a><button onClick={() => user ? setLibraryOpen(true) : setAuthOpen(true)}><StudioIcon name="library" /><span>Library</span></button></nav>
       <GenreGate track={genrePrompt?.track} onChoose={confirmGenreScope} onCancel={() => setGenrePrompt(null)} />
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={requestGenreChoice} />
