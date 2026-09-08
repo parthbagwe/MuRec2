@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
-const DISPLAY_MS = 1850;
+const DISPLAY_MS = 2400;
 
 function shouldShowReveal() {
   if (typeof window === "undefined") return false;
@@ -37,12 +37,16 @@ export default function LogoReveal() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
         >
-          <object
-            data="/cerum-logo-reveal.svg"
-            type="image/svg+xml"
-            aria-label="Cerum"
-            onError={() => setVisible(false)}
-          />
+          <div className="logo-reveal-native" aria-hidden="true">
+            <span className="logo-reveal-kicker">LISTEN DIFFERENTLY</span>
+            <div className="logo-reveal-lockup">
+              <span className="logo-reveal-mark">
+                <i /><i /><i /><i />
+              </span>
+              <strong>cerum<em>.</em></strong>
+            </div>
+            <span className="logo-reveal-progress"><i /></span>
+          </div>
           <button type="button" onClick={() => setVisible(false)}>
             Skip intro
           </button>

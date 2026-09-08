@@ -13,10 +13,28 @@ button { touch-action: manipulation; }
 button:disabled { cursor: not-allowed; }
 button, a { transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s; }
 ::selection { background: #edaa8850; color: #fff; }
-.logo-reveal { position: fixed; inset: 0; z-index: 500; display: grid; place-items: center; overflow: hidden; background: #121313; }
-.logo-reveal object { display: block; width: min(520px, 88vw); max-height: 82dvh; aspect-ratio: 1; }
+.logo-reveal { position: fixed; inset: 0; z-index: 500; display: grid; place-items: center; overflow: hidden; background: #090a0a; }
+.logo-reveal::before { content: ""; position: absolute; inset: -25%; background: radial-gradient(circle at 50% 52%, #edaa8812 0, transparent 36%); animation: cerumRevealGlow 2.4s ease-out both; }
+.logo-reveal-native { position: relative; display: grid; place-items: center; width: 100%; height: 100%; padding: clamp(28px, 4vw, 64px); }
+.logo-reveal-kicker { position: absolute; top: clamp(28px, 4vw, 64px); left: clamp(28px, 4vw, 64px); color: #777b75; font: 500 clamp(8px, .7vw, 11px)/1 var(--mono); letter-spacing: .22em; opacity: 0; animation: cerumRevealCopy .45s .1s ease-out forwards; }
+.logo-reveal-lockup { display: flex; align-items: center; justify-content: center; gap: clamp(24px, 4vw, 72px); width: 100%; }
+.logo-reveal-mark { display: flex; align-items: center; justify-content: center; gap: clamp(10px, 1.1vw, 18px); width: clamp(150px, 19vw, 310px); height: clamp(190px, 27vw, 430px); transform: rotate(20deg); }
+.logo-reveal-mark i { width: clamp(16px, 2vw, 31px); border-radius: 999px; background: #edaa88; opacity: 0; transform: scaleY(0); transform-origin: center; animation: cerumBarReveal .72s cubic-bezier(.16, 1, .3, 1) forwards; box-shadow: 0 0 46px #edaa8820; }
+.logo-reveal-mark i:nth-child(1) { height: 43%; animation-delay: .12s; }
+.logo-reveal-mark i:nth-child(2) { height: 92%; animation-delay: .2s; }
+.logo-reveal-mark i:nth-child(3) { height: 69%; animation-delay: .28s; }
+.logo-reveal-mark i:nth-child(4) { height: 28%; animation-delay: .36s; }
+.logo-reveal-lockup strong { color: #f3f0e9; font: 720 clamp(64px, 12vw, 196px)/.82 var(--sans); letter-spacing: -.075em; opacity: 0; transform: translateX(36px); animation: cerumWordReveal .82s .48s cubic-bezier(.16, 1, .3, 1) forwards; }
+.logo-reveal-lockup strong em { color: #edaa88; font-style: normal; }
+.logo-reveal-progress { position: absolute; right: clamp(28px, 4vw, 64px); bottom: clamp(28px, 4vw, 64px); left: clamp(28px, 4vw, 64px); height: 1px; overflow: hidden; background: #ffffff12; }
+.logo-reveal-progress i { display: block; width: 100%; height: 100%; background: #edaa88; transform: scaleX(0); transform-origin: left; animation: cerumRevealProgress 2.25s .08s linear forwards; }
 .logo-reveal button { position: absolute; top: max(24px, env(safe-area-inset-top)); right: max(24px, env(safe-area-inset-right)); min-height: 42px; padding: 0 15px; border: 1px solid #f3f0e933; border-radius: 8px; background: #191a1acc; color: #c9c6bf; font: 600 10px var(--sans); letter-spacing: .04em; }
 .logo-reveal button:hover, .logo-reveal button:focus-visible { border-color: #edaa88; color: #fff; background: #24201e; }
+@keyframes cerumBarReveal { 0% { opacity: 0; transform: scaleY(0); } 55% { opacity: 1; transform: scaleY(1.08); } 100% { opacity: 1; transform: scaleY(1); } }
+@keyframes cerumWordReveal { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+@keyframes cerumRevealCopy { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; transform: none; } }
+@keyframes cerumRevealProgress { to { transform: scaleX(1); } }
+@keyframes cerumRevealGlow { 0% { opacity: 0; transform: scale(.7); } 45% { opacity: 1; } 100% { opacity: .35; transform: scale(1.18); } }
 .studio-icon { flex: 0 0 21px; width: 21px; height: 21px; }
 .app-shell { background: #121313; padding-bottom: 116px; }
 .app-shell > .app-header { position: sticky; z-index: 120; }
@@ -520,7 +538,9 @@ footer > span > span { font-weight: 400; color: #909681; }
   .library-backdrop { padding: 0; }
   .library-panel { width: 100%; }
   .analysis-loading { inset: 126px 0 calc(168px + env(safe-area-inset-bottom)); }
-  .logo-reveal object { width: min(400px, 100vw); }
+  .logo-reveal-lockup { flex-direction: column; gap: 22px; }
+  .logo-reveal-mark { width: 132px; height: 180px; }
+  .logo-reveal-lockup strong { font-size: clamp(68px, 22vw, 104px); }
   .logo-reveal button { top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }
 }
 @media (prefers-reduced-motion: reduce) {
