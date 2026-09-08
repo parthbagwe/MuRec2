@@ -13,18 +13,18 @@ button { touch-action: manipulation; }
 button:disabled { cursor: not-allowed; }
 button, a { transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s; }
 ::selection { background: #edaa8850; color: #fff; }
-.logo-reveal { position: fixed; inset: 0; z-index: 500; display: grid; place-items: center; overflow: hidden; background: #090a0a; }
+.app-shell > .logo-reveal { position: fixed; inset: 0; z-index: 500; display: grid; place-items: center; overflow: hidden; background: #090a0a; }
 .logo-reveal::before { content: ""; position: absolute; inset: -25%; background: radial-gradient(circle at 50% 52%, #edaa8812 0, transparent 36%); animation: cerumRevealGlow 2.4s ease-out both; }
 .logo-reveal-native { position: relative; display: grid; place-items: center; width: 100%; height: 100%; padding: clamp(28px, 4vw, 64px); }
 .logo-reveal-kicker { position: absolute; top: clamp(28px, 4vw, 64px); left: clamp(28px, 4vw, 64px); color: #777b75; font: 500 clamp(8px, .7vw, 11px)/1 var(--mono); letter-spacing: .22em; opacity: 0; animation: cerumRevealCopy .45s .1s ease-out forwards; }
-.logo-reveal-lockup { display: flex; align-items: center; justify-content: center; gap: clamp(24px, 4vw, 72px); width: 100%; }
-.logo-reveal-mark { display: flex; align-items: center; justify-content: center; gap: clamp(10px, 1.1vw, 18px); width: clamp(150px, 19vw, 310px); height: clamp(190px, 27vw, 430px); transform: rotate(20deg); }
+.logo-reveal-lockup { display: flex; align-items: center; justify-content: center; gap: clamp(24px, 3vw, 54px); width: min(100%, 90vw); }
+.logo-reveal-mark { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: clamp(10px, 1.1vw, 18px); width: clamp(145px, 18vw, 270px); height: clamp(185px, 25vw, 390px); transform: rotate(20deg); }
 .logo-reveal-mark i { width: clamp(16px, 2vw, 31px); border-radius: 999px; background: #edaa88; opacity: 0; transform: scaleY(0); transform-origin: center; animation: cerumBarReveal .72s cubic-bezier(.16, 1, .3, 1) forwards; box-shadow: 0 0 46px #edaa8820; }
 .logo-reveal-mark i:nth-child(1) { height: 43%; animation-delay: .12s; }
 .logo-reveal-mark i:nth-child(2) { height: 92%; animation-delay: .2s; }
 .logo-reveal-mark i:nth-child(3) { height: 69%; animation-delay: .28s; }
 .logo-reveal-mark i:nth-child(4) { height: 28%; animation-delay: .36s; }
-.logo-reveal-lockup strong { color: #f3f0e9; font: 720 clamp(64px, 12vw, 196px)/.82 var(--sans); letter-spacing: -.075em; opacity: 0; transform: translateX(36px); animation: cerumWordReveal .82s .48s cubic-bezier(.16, 1, .3, 1) forwards; }
+.logo-reveal-lockup strong { color: #f3f0e9; font: 720 clamp(64px, 9vw, 150px)/.82 var(--sans); letter-spacing: -.075em; white-space: nowrap; opacity: 0; transform: translateX(36px); animation: cerumWordReveal .82s .48s cubic-bezier(.16, 1, .3, 1) forwards; }
 .logo-reveal-lockup strong em { color: #edaa88; font-style: normal; }
 .logo-reveal-progress { position: absolute; right: clamp(28px, 4vw, 64px); bottom: clamp(28px, 4vw, 64px); left: clamp(28px, 4vw, 64px); height: 1px; overflow: hidden; background: #ffffff12; }
 .logo-reveal-progress i { display: block; width: 100%; height: 100%; background: #edaa88; transform: scaleX(0); transform-origin: left; animation: cerumRevealProgress 2.25s .08s linear forwards; }
