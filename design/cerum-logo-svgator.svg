@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400" role="img" aria-labelledby="title description">
+  <title id="title">Cerum logo — editable SVGator source</title>
+  <desc id="description">Four copper frequency bars beside the Cerum wordmark on a charcoal canvas. Static source artwork for animation in SVGator.</desc>
+  <rect id="background" width="800" height="400" fill="#121313"/>
+  <g id="frequency-mark" fill="#edaa88" transform="translate(155 136)">
+    <rect id="bar-one" x="0" y="34" width="16" height="60" rx="8" transform="rotate(20 8 64)"/>
+    <rect id="bar-two" x="28" y="6" width="16" height="116" rx="8" transform="rotate(20 36 64)"/>
+    <rect id="bar-three" x="56" y="18" width="16" height="92" rx="8" transform="rotate(20 64 64)"/>
+    <rect id="bar-four" x="84" y="42" width="16" height="44" rx="8" transform="rotate(20 92 64)"/>
+  </g>
+  <g id="wordmark" font-family="Manrope, Arial, sans-serif" font-size="112" font-weight="800" letter-spacing="-6">
+    <text id="cerum-name" x="291" y="238" fill="#f3f0e9">cerum</text>
+    <circle id="copper-period" cx="637" cy="230" r="8" fill="#edaa88"/>
+  </g>
+</svg>

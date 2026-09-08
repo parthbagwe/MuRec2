@@ -13,6 +13,10 @@ button { touch-action: manipulation; }
 button:disabled { cursor: not-allowed; }
 button, a { transition: background-color .2s, color .2s, border-color .2s, box-shadow .2s; }
 ::selection { background: #edaa8850; color: #fff; }
+.logo-reveal { position: fixed; inset: 0; z-index: 500; display: grid; place-items: center; overflow: hidden; background: #121313; }
+.logo-reveal img { display: block; width: min(520px, 88vw); max-height: 82dvh; aspect-ratio: 1; object-fit: contain; }
+.logo-reveal button { position: absolute; top: max(24px, env(safe-area-inset-top)); right: max(24px, env(safe-area-inset-right)); min-height: 42px; padding: 0 15px; border: 1px solid #f3f0e933; border-radius: 8px; background: #191a1acc; color: #c9c6bf; font: 600 10px var(--sans); letter-spacing: .04em; }
+.logo-reveal button:hover, .logo-reveal button:focus-visible { border-color: #edaa88; color: #fff; background: #24201e; }
 .studio-icon { flex: 0 0 21px; width: 21px; height: 21px; }
 .app-shell { background: #121313; padding-bottom: 116px; }
 .app-shell > .app-header { position: sticky; z-index: 120; }
@@ -516,6 +520,8 @@ footer > span > span { font-weight: 400; color: #909681; }
   .library-backdrop { padding: 0; }
   .library-panel { width: 100%; }
   .analysis-loading { inset: 126px 0 calc(168px + env(safe-area-inset-bottom)); }
+  .logo-reveal img { width: min(400px, 100vw); }
+  .logo-reveal button { top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

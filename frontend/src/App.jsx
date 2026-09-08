@@ -15,6 +15,7 @@ import { analyzePreview } from "./audio/transitionAnalyzer";
 import { watchIndexStatus } from "./indexStatus";
 import DiscoveryHome from "./components/DiscoveryHome";
 import StudioIcon from "./components/StudioIcon";
+import LogoReveal from "./components/LogoReveal";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -344,6 +345,7 @@ export default function App() {
 
   return (
     <main className={`app-shell mood-${activeMood.id}`}>
+      <LogoReveal />
       <motion.div
         className="mood-color-base"
         initial={false}
