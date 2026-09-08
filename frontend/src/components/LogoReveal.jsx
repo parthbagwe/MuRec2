@@ -39,9 +39,10 @@ export default function LogoReveal() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
         >
-          <img
-            src="/cerum-logo-reveal.svg"
-            alt="Cerum"
+          <object
+            data="/cerum-logo-reveal.svg"
+            type="image/svg+xml"
+            aria-label="Cerum"
             onError={() => setVisible(false)}
           />
           <button type="button" onClick={() => setVisible(false)}>
