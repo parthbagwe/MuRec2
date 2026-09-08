@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
-const DISPLAY_MS = 2400;
+const DISPLAY_MS = 1500;
 
 function shouldShowReveal() {
   if (typeof window === "undefined") return false;

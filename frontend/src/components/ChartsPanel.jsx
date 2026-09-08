@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { getCharts } from "../api";
+import { playTrackAfterReveal } from "../startDiscoveryTrack";
 
 const REGIONS = [{ id: "in", label: "India" }, { id: "us", label: "USA" }];
 
@@ -10,7 +11,7 @@ function PlayIcon({ playing }) {
     : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>;
 }
 
-export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }) {
+export default function ChartsPanel({ onSelect, onPreviewChange, onBeforePlayback, onInteraction }) {
   const [region, setRegion] = useState("in");
   const [charts, setCharts] = useState({});
   const [chartMeta, setChartMeta] = useState({});
@@ -65,7 +66,15 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onInteraction }
     onPreviewChange(track);
     audio.onended = () => { setPlayingId(null); onPreviewChange(null); onInteraction(track, "preview_completed"); };
     audio.ontimeupdate = () => { if (audio.currentTime >= 30) { audio.pause(); audio.onended(); } };
-    try { await audio.play(); onInteraction(track, "preview_started"); }
+    try {
+      const started = await playTrackAfterReveal(audio, track, onBeforePlayback);
+      if (!started) {
+        setPlayingId(null);
+        onPreviewChange(null);
+        return;
+      }
+      onInteraction(track, "preview_started");
+    }
     catch { setPlayingId(null); onPreviewChange(null); }
   }
 

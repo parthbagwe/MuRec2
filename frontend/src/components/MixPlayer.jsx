@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { analyzePreview, buildTransitionPlan, samplePreviewProfile } from "../audio/transitionAnalyzer";
 import FullscreenVisualizer from "./FullscreenVisualizer";
+import { playTrackAfterReveal, releasePreparedPlayback } from "../startDiscoveryTrack";
 
 const PREVIEW_LIMIT_SECONDS = 30;
 const previewDuration = (audio) => Math.min(Number(audio?.duration) || PREVIEW_LIMIT_SECONDS, PREVIEW_LIMIT_SECONDS);
@@ -64,7 +65,7 @@ function beatAlignmentDelay(audio, currentTrack, nextTrack) {
   return delay < 0.06 ? 0 : Math.min(0.65, delay);
 }
 
-export default function MixPlayer({ queue, loading, autoPlayToken, playbackHandoff, externalPlayingTrackId, palette, onTrackChange, onInteraction }) {
+export default function MixPlayer({ queue, loading, autoPlayToken, playbackHandoff, externalPlayingTrackId, palette, onTrackChange, onInteraction, onBeforePlayback }) {
   const audioRefs = useRef([]);
   const animationRef = useRef(null);
   const rateAnimationRef = useRef(null);
@@ -278,8 +279,14 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     setCurrentTime(audio.currentTime || 0);
     setDuration(previewDuration(audio));
     setPlaybackError("");
-    playbackHandoff.playPromise
-      .then(() => {
+    let cancelled = false;
+    releasePreparedPlayback(playbackHandoff, track, onBeforePlayback)
+      .then((started) => {
+        if (cancelled) {
+          audio.pause();
+          return;
+        }
+        if (!started) return;
         setIsPlaying(true);
         isPlayingRef.current = true;
         onTrackChange(track);
@@ -292,11 +299,12 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
         setPlaybackError("This preview could not start. Try YouTube for the full song.");
       });
     return () => {
+      cancelled = true;
       audio.removeEventListener("loadedmetadata", syncDuration);
       audio.removeEventListener("timeupdate", syncTime);
       audio.removeEventListener("ended", finish);
     };
-  }, [anchorKey, playbackHandoff?.token]);
+  }, [anchorKey, playbackHandoff?.token, onBeforePlayback]);
 
   useEffect(() => {
     if (!anchorKey || !autoPlayToken || autoPlayToken === lastAutoPlayToken.current) return undefined;
@@ -371,13 +379,14 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
     audio.volume = 1;
     audio.playbackRate = 1;
     let started = false;
-    for (let attempt = 0; attempt < 2 && !started; attempt += 1) {
+    try {
+      started = await playTrackAfterReveal(audio, track, onBeforePlayback, { preservePosition: true });
+    } catch {
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
       try {
         await audio.play();
         started = true;
-      } catch {
-        if (attempt === 0) await new Promise((resolve) => window.setTimeout(resolve, 180));
-      }
+      } catch { /* handled below */ }
     }
     if (started) {
       isPlayingRef.current = true;

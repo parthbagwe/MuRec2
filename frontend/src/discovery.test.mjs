@@ -46,6 +46,8 @@ test('shelf starts one audio element in the click and hands that exact element t
   assert.equal(handoff.audio, instances[0]);
   assert.equal(handoff.audio.src, STARTER_TRACKS[0].preview_url);
   assert.equal(handoff.audio.preload, 'auto');
+  assert.equal(handoff.audio.muted, false);
+  assert.equal(handoff.audio.volume, 0);
   assert.equal(handoff.trackId, STARTER_TRACKS[0].track_id);
   assert.equal(handoff.playPromise, playPromise);
   assert.ok(Number.isFinite(handoff.token));

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { hostedApiEnabled, searchTracks } from "../api";
+import { prepareTrackPlayback } from "../startDiscoveryTrack";
 
 export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
   const [query, setQuery] = useState("");
@@ -80,9 +81,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
       }
       prepared.adopted = true;
       preparedAudio.current = null;
-      const playPromise = prepared.audio.play();
-      playPromise.catch(() => {});
-      playbackHandoff = { trackId: track.track_id, audio: prepared.audio, playPromise, token: Date.now() };
+      playbackHandoff = prepareTrackPlayback(track, prepared.audio);
     }
     suppressSearch.current = true;
     setQuery(`${track.title} — ${track.artist}`);

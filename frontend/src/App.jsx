@@ -16,6 +16,8 @@ import { watchIndexStatus } from "./indexStatus";
 import DiscoveryHome from "./components/DiscoveryHome";
 import StudioIcon from "./components/StudioIcon";
 import LogoReveal from "./components/LogoReveal";
+import PlaybackReveal, { PLAYBACK_REVEAL_MS } from "./components/PlaybackReveal";
+import { prepareTrackPlayback } from "./startDiscoveryTrack";
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -89,13 +91,39 @@ export default function App() {
   const [autoPlayToken, setAutoPlayToken] = useState(0);
   const [playbackHandoff, setPlaybackHandoff] = useState(null);
   const [analysisLoading, setAnalysisLoading] = useState(null);
+  const [playbackReveal, setPlaybackReveal] = useState(null);
   const recommendationRequest = useRef(0);
   const accountRevision = useRef(0);
   const liveFingerprintCache = useRef(new Map());
+  const playbackRevealGate = useRef({ timer: null, resolve: null, token: 0 });
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => item.track_id)), [favorites]);
   const scoreMode = recommendations[0]?.score_mode;
   const weightLabels = { audio: "rhythm", lyric: "timbre", collab: "harmony" };
   const activeMood = useMemo(() => moodForTrack(moodTrack), [moodTrack]);
+
+  const showPlaybackReveal = useCallback((track) => {
+    const previous = playbackRevealGate.current;
+    if (previous.timer) window.clearTimeout(previous.timer);
+    previous.resolve?.(false);
+
+    const token = Date.now() + Math.random();
+    setPlaybackReveal({ track, token });
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        if (playbackRevealGate.current.token !== token) return;
+        playbackRevealGate.current = { timer: null, resolve: null, token: 0 };
+        setPlaybackReveal(null);
+        resolve(true);
+      }, PLAYBACK_REVEAL_MS);
+      playbackRevealGate.current = { timer, resolve, token };
+    });
+  }, []);
+
+  useEffect(() => () => {
+    const pending = playbackRevealGate.current;
+    if (pending.timer) window.clearTimeout(pending.timer);
+    pending.resolve?.(false);
+  }, []);
 
   useEffect(() => {
     const showStorageWarning = (event) => setError(event.detail);
@@ -147,7 +175,7 @@ export default function App() {
     setRecommendations([]);
     setError("");
     setAudioProfile(null);
-    setPlaybackHandoff(handoff);
+    setPlaybackHandoff(handoff || prepareTrackPlayback(track));
     setMixQueue([track]);
     setAutoPlayToken((token) => token + 1);
   }
@@ -346,6 +374,7 @@ export default function App() {
   return (
     <main className={`app-shell mood-${activeMood.id}`}>
       <LogoReveal />
+      <PlaybackReveal state={playbackReveal} />
       <motion.div
         className="mood-color-base"
         initial={false}
@@ -411,7 +440,7 @@ export default function App() {
           <div className="reference-track">
             <p className="kicker">Current song</p>
             {selected
-              ? <TrackPreview track={selected} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} />
+              ? <TrackPreview track={selected} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} onBeforePlayback={showPlaybackReveal} />
               : <div className="empty-current"><h2>What are you in the mood for?</h2><p>Choose a song above. We’ll take it from there.</p></div>}
           </div>
           <div className="recommendation-actions">
@@ -441,7 +470,7 @@ export default function App() {
 
         {(selected || recommendations.length > 0) && <motion.div className="results-heading" initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">{mode === "transition" ? "YOUR TRANSITION PATH" : "KEEP THE FEELING GOING"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} songs that fit`) : "Finding your next favourites…"}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : "Acoustic match · vibe locked"}</p>}</motion.div>}
         <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
-          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); requestGenreChoice(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
+          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); requestGenreChoice(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onBeforePlayback={showPlaybackReveal} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
         </div>
           </section>
 
@@ -449,7 +478,7 @@ export default function App() {
             <header className="secondary-heading"><div><p className="kicker">TAKE THE SCENIC ROUTE</p><h2>The mix studio</h2></div><p>Two songs, with a little discovery in between.</p></header>
             <div className="secondary-grid">
               <SoundBridge building={bridgeLoading} onBuild={buildBridge} />
-              <div id="charts"><ChartsPanel onSelect={requestGenreChoice} onPreviewChange={handlePreviewChange} onInteraction={handleInteraction} /></div>
+              <div id="charts"><ChartsPanel onSelect={requestGenreChoice} onPreviewChange={handlePreviewChange} onBeforePlayback={showPlaybackReveal} onInteraction={handleInteraction} /></div>
             </div>
           </section>
 
@@ -461,7 +490,7 @@ export default function App() {
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={requestGenreChoice} />
       <AnalysisLoading state={analysisLoading} />
-      <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} playbackHandoff={playbackHandoff} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} />
+      <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} playbackHandoff={playbackHandoff} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} onBeforePlayback={showPlaybackReveal} />
     </main>
   );
 }

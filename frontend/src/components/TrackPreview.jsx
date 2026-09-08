@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { playTrackAfterReveal } from "../startDiscoveryTrack";
 
 function youtubeSearchUrl(track) {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${track.title} ${track.artist} official audio`)}`;
@@ -10,7 +11,7 @@ function PlayIcon({ paused }) {
     : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>;
 }
 
-export default function TrackPreview({ track, playingTrackId, onPreviewChange, onInteraction }) {
+export default function TrackPreview({ track, playingTrackId, onPreviewChange, onInteraction, onBeforePlayback }) {
   const audioRef = useRef(null);
   const [playbackError, setPlaybackError] = useState("");
   const isPlaying = playingTrackId === track.track_id;
@@ -37,7 +38,11 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
     }
     onPreviewChange(track);
     try {
-      await audio.play();
+      const started = await playTrackAfterReveal(audio, track, onBeforePlayback);
+      if (!started) {
+        onPreviewChange(null);
+        return;
+      }
       onInteraction(track, "preview_started");
     } catch {
       onPreviewChange(null);

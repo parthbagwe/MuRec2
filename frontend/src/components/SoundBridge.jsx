@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { hostedApiEnabled, searchTracks } from "../api";
+import { prepareTrackPlayback } from "../startDiscoveryTrack";
 
 function BridgeTrackSearch({ label, selected, onSelect }) {
   const [query, setQuery] = useState("");
@@ -72,15 +73,6 @@ function BridgeTrackSearch({ label, selected, onSelect }) {
   );
 }
 
-function preparePlayback(track) {
-  if (!track?.preview_url) return null;
-  const audio = new Audio(track.preview_url);
-  audio.preload = "auto";
-  const playPromise = audio.play();
-  playPromise.catch(() => {});
-  return { trackId: track.track_id, audio, playPromise, token: Date.now() };
-}
-
 export default function SoundBridge({ building, onBuild }) {
   const [start, setStart] = useState(null);
   const [destination, setDestination] = useState(null);
@@ -89,7 +81,7 @@ export default function SoundBridge({ building, onBuild }) {
   function submit(event) {
     event.preventDefault();
     if (!start || !destination || sameTrack || building) return;
-    onBuild(start, destination, preparePlayback(start));
+    onBuild(start, destination, prepareTrackPlayback(start));
   }
 
   return (
