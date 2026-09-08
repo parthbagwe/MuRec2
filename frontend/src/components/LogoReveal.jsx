@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
-const SESSION_KEY = "cerum.logo-reveal.v1";
 const DISPLAY_MS = 1850;
 
 function shouldShowReveal() {
   if (typeof window === "undefined") return false;
-  return window.sessionStorage.getItem(SESSION_KEY) !== "seen";
+  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 export default function LogoReveal() {
@@ -16,7 +15,6 @@ export default function LogoReveal() {
   useEffect(() => {
     if (!visible) return undefined;
 
-    window.sessionStorage.setItem(SESSION_KEY, "seen");
     if (reducedMotion) {
       setVisible(false);
       return undefined;
