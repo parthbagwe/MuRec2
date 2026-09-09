@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { getCharts } from "../api";
-import { playTrackAfterReveal } from "../startDiscoveryTrack";
+import { createPreviewAudio, playTrackAfterReveal } from "../startDiscoveryTrack";
 
 const REGIONS = [{ id: "in", label: "India" }, { id: "us", label: "USA" }];
 
@@ -21,6 +21,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onBeforePlaybac
   const [retryToken, setRetryToken] = useState(0);
   const [playingId, setPlayingId] = useState(null);
   const audioRef = useRef(null);
+  const audioTrackIdRef = useRef(null);
 
   useEffect(() => {
     if (charts[region]) return undefined;
@@ -59,15 +60,17 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onBeforePlaybac
       onPreviewChange(null);
       return;
     }
+    const canResume = audioTrackIdRef.current === track.track_id && audioRef.current?.currentTime > 0.05 && !audioRef.current?.ended;
     audioRef.current?.pause();
-    const audio = new Audio(track.preview_url);
+    const audio = canResume ? audioRef.current : createPreviewAudio(track.preview_url);
     audioRef.current = audio;
+    audioTrackIdRef.current = track.track_id;
     setPlayingId(track.track_id);
     onPreviewChange(track);
     audio.onended = () => { setPlayingId(null); onPreviewChange(null); onInteraction(track, "preview_completed"); };
     audio.ontimeupdate = () => { if (audio.currentTime >= 30) { audio.pause(); audio.onended(); } };
     try {
-      const started = await playTrackAfterReveal(audio, track, onBeforePlayback);
+      const started = canResume ? await audio.play().then(() => true) : await playTrackAfterReveal(audio, track, onBeforePlayback);
       if (!started) {
         setPlayingId(null);
         onPreviewChange(null);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { hostedApiEnabled, searchTracks } from "../api";
-import { prepareTrackPlayback } from "../startDiscoveryTrack";
+import { createPreviewAudio, prepareTrackPlayback } from "../startDiscoveryTrack";
 
 export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
   const [query, setQuery] = useState("");
@@ -56,7 +56,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
     if (!track?.preview_url) return undefined;
     const prepared = {
       trackId: track.track_id,
-      audio: new Audio(track.preview_url),
+      audio: createPreviewAudio(track.preview_url),
       adopted: false,
     };
     prepared.audio.preload = "auto";
@@ -76,7 +76,7 @@ export default function SearchBar({ onSelect, onAnalyze, analyzing }) {
     if (track.preview_url) {
       let prepared = preparedAudio.current;
       if (!prepared || prepared.trackId !== track.track_id) {
-        prepared = { trackId: track.track_id, audio: new Audio(track.preview_url), adopted: false };
+        prepared = { trackId: track.track_id, audio: createPreviewAudio(track.preview_url), adopted: false };
         prepared.audio.preload = "auto";
       }
       prepared.adopted = true;

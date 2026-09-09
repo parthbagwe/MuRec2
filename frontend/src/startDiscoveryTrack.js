@@ -1,8 +1,17 @@
 // Unlock audio silently inside the user's click gesture. The shared mixer
 // rewinds and releases this exact element after the full-screen reveal.
+export function createPreviewAudio(previewUrl) {
+  const audio = new Audio();
+  audio.crossOrigin = "anonymous";
+  audio.preload = "auto";
+  audio.src = previewUrl;
+  return audio;
+}
+
 export function prepareTrackPlayback(track, existingAudio = null) {
   if (!track?.preview_url) return null;
-  const audio = existingAudio || new Audio(track.preview_url);
+  const audio = existingAudio || createPreviewAudio(track.preview_url);
+  audio.crossOrigin = "anonymous";
   audio.preload = "auto";
   audio.muted = false;
   audio.volume = 0;

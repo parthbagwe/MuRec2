@@ -18,6 +18,39 @@ function normalizedTempoPair(outgoingBpm, incomingBpm) {
   return [clamp(first, 55, 190), clamp(second, 55, 190)];
 }
 
+function cosineSimilarity(first, second) {
+  if (!first?.length || !second?.length || first.length !== second.length) return 0;
+  let dot = 0;
+  let normFirst = 0;
+  let normSecond = 0;
+  for (let index = 0; index < first.length; index += 1) {
+    dot += first[index] * second[index];
+    normFirst += first[index] ** 2;
+    normSecond += second[index] ** 2;
+  }
+  return clamp(dot / Math.max(Math.sqrt(normFirst * normSecond), 1e-9), 0, 1);
+}
+
+function averageFrameValue(profile, name, start = 0, end = profile?.duration || 0) {
+  const values = profile?.frames?.filter((frame) => frame.time >= start && frame.time <= end) || [];
+  if (!values.length) return 0;
+  return values.reduce((sum, frame) => sum + Number(frame[name] || 0), 0) / values.length;
+}
+
+function measuredTempo(profile, track) {
+  return Number(profile?.fingerprint?.profile?.bpm) || Number(track?.bpm) || 96;
+}
+
+function tempoConfidence(profile) {
+  const summary = profile?.fingerprint?.profile;
+  return clamp((Number(summary?.tempo_confidence) || 0) * 0.58 + (Number(summary?.beat_regularity) || 0) * 0.42, 0, 1);
+}
+
+function nearestTempoRate(outgoingBpm, incomingBpm) {
+  const [normalizedOutgoing, normalizedIncoming] = normalizedTempoPair(outgoingBpm, incomingBpm);
+  return normalizedOutgoing / normalizedIncoming;
+}
+
 function frameAt(profile, time) {
   const index = Math.round(time / profile.hopSeconds);
   return profile.frames[clamp(index, 0, profile.frames.length - 1)] || profile.frames[0];
@@ -352,6 +385,8 @@ async function analyzeDecodedBuffer(buffer, onProgress) {
       zeroCrossingRate: zeroCrossings / frameSize,
       onsetRaw,
       onset: 0,
+      // This is deliberately an estimate, not source-separated vocal detection.
+      vocalEstimate: 0,
     });
     rawOnsets.push(onsetRaw);
     totalSquare += square;
@@ -370,6 +405,14 @@ async function analyzeDecodedBuffer(buffer, onProgress) {
     frame.brightness = clamp((frame.highRatio - brightnessFloor) / (brightnessCeiling - brightnessFloor), 0, 1);
     frame.crest = clamp((frame.crestRaw - 1) / 7, 0, 1);
     frame.texture = clamp(frame.brightness * 0.58 + frame.zeroCrossingRate * 5.2 * 0.42, 0, 1);
+    frame.vocalEstimate = clamp(
+      frame.level * 0.34
+        + (1 - Math.min(1, frame.lowRatio)) * 0.22
+        + (1 - Math.min(1, frame.highRatio / 1.45)) * 0.24
+        + (1 - frame.crest) * 0.20,
+      0,
+      1,
+    );
   }
   onProgress?.({ progress: 0.50, stage: "Reading rhythm and transients" });
   await yieldToBrowser();
@@ -482,30 +525,93 @@ export function analyzePreview(previewUrl, onProgress = null) {
 }
 
 export function buildTransitionPlan(outgoingProfile, incomingProfile, outgoingTrack, incomingTrack) {
-  const [outgoingBpm, matchedIncomingBpm] = normalizedTempoPair(outgoingTrack?.bpm, incomingTrack?.bpm);
-  const rawIncomingBpm = Number(incomingTrack?.bpm) || matchedIncomingBpm;
-  const playbackRate = clamp(outgoingBpm / matchedIncomingBpm, 0.94, 1.06);
-  const phraseBeats = outgoingBpm >= 132 ? 12 : 8;
-  const mixSeconds = clamp(phraseBeats * 60 / outgoingBpm, 3.4, 7.2);
-  const outgoingStart = outgoingBoundary(outgoingProfile, outgoingBpm, mixSeconds);
-  const latestEntry = Math.min(10, Math.max(0, incomingProfile.duration - mixSeconds - 2));
-  const incomingStart = incomingEntry(incomingProfile, rawIncomingBpm, latestEntry);
-  const outgoingLoudness = windowRms(outgoingProfile, outgoingStart, Math.min(outgoingProfile.duration, outgoingStart + mixSeconds));
-  const incomingLoudness = windowRms(incomingProfile, incomingStart, Math.min(incomingProfile.duration, incomingStart + mixSeconds));
-  const incomingGain = clamp(outgoingLoudness / Math.max(incomingLoudness, 0.001), 0.68, 1);
-  const confidence = clamp(
-    (percentile(outgoingProfile.frames.map((frame) => frame.onset), 0.85)
-      + percentile(incomingProfile.frames.map((frame) => frame.onset), 0.85)) / 2,
+  const outgoingBpm = measuredTempo(outgoingProfile, outgoingTrack);
+  const incomingBpm = measuredTempo(incomingProfile, incomingTrack);
+  const rawRate = nearestTempoRate(outgoingBpm, incomingBpm);
+  const tempoDifference = Math.abs(1 - rawRate);
+  const outgoingTempoConfidence = tempoConfidence(outgoingProfile);
+  const incomingTempoConfidence = tempoConfidence(incomingProfile);
+  const rhythmConfidence = Math.min(outgoingTempoConfidence, incomingTempoConfidence);
+  const outgoingSummary = outgoingProfile?.fingerprint?.profile || {};
+  const incomingSummary = incomingProfile?.fingerprint?.profile || {};
+  const harmonicCompatibility = cosineSimilarity(
+    outgoingProfile?.fingerprint?.vector?.slice(-12),
+    incomingProfile?.fingerprint?.vector?.slice(-12),
+  );
+  const energyDifference = Math.abs((Number(outgoingSummary.energy) || 0) - (Number(incomingSummary.energy) || 0)) / 100;
+  const brightnessDifference = Math.abs((Number(outgoingSummary.brightness) || 0) - (Number(incomingSummary.brightness) || 0));
+  const bassDifference = Math.abs(
+    averageFrameValue(outgoingProfile, "bass") - averageFrameValue(incomingProfile, "bass"),
+  );
+  const rhythmCompatibility = clamp(1 - tempoDifference / 0.16, 0, 1) * rhythmConfidence;
+  const spectralCompatibility = clamp(1 - brightnessDifference * 0.72 - bassDifference * 0.28, 0, 1);
+  const compatibility = clamp(
+    rhythmCompatibility * 0.38
+      + harmonicCompatibility * 0.25
+      + spectralCompatibility * 0.22
+      + (1 - energyDifference) * 0.15,
     0,
     1,
   );
+
+  let mode = "clean_handoff";
+  if (rhythmConfidence >= 0.48 && tempoDifference <= 0.055 && harmonicCompatibility >= 0.38) mode = "beat_aligned";
+  else if (compatibility >= 0.43 || energyDifference <= 0.24) mode = "gentle_crossfade";
+
+  const phraseBeats = outgoingBpm >= 138 ? 8 : 6;
+  const desiredDuration = mode === "beat_aligned"
+    ? clamp(phraseBeats * 60 / outgoingBpm, 3.1, 5.8)
+    : mode === "gentle_crossfade"
+      ? clamp(2.4 + compatibility * 1.8, 2.4, 4.2)
+      : clamp(0.72 + compatibility * 0.42, 0.72, 1.15);
+  const outgoingStart = outgoingBoundary(outgoingProfile, outgoingBpm, desiredDuration);
+  const latestEntry = Math.min(mode === "clean_handoff" ? 4 : 9, Math.max(0, incomingProfile.duration - desiredDuration - 1.2));
+  let incomingStart = incomingEntry(incomingProfile, incomingBpm, latestEntry);
+  const outgoingVocalReliability = clamp((Number(outgoingSummary.tonal_strength) || 0) * (1 - (Number(outgoingSummary.spectral_flatness) || 0)), 0, 1);
+  const incomingVocalReliability = clamp((Number(incomingSummary.tonal_strength) || 0) * (1 - (Number(incomingSummary.spectral_flatness) || 0)), 0, 1);
+  const vocalEstimateReliable = outgoingVocalReliability >= 0.58 && incomingVocalReliability >= 0.58;
+  if (vocalEstimateReliable) {
+    const candidates = phraseCandidates(incomingProfile, incomingBpm, 0, latestEntry);
+    const quieterCandidate = candidates
+      .map((time) => ({ time, vocal: averageFrameValue(incomingProfile, "vocalEstimate", time, Math.min(incomingProfile.duration, time + desiredDuration * 0.65)) }))
+      .filter((candidate) => candidate.vocal < 0.72)
+      .sort((first, second) => first.vocal - second.vocal)[0];
+    if (quieterCandidate) incomingStart = quieterCandidate.time;
+  }
+  const duration = Math.max(0.55, Math.min(desiredDuration, outgoingProfile.duration - outgoingStart - 0.06, 30 - outgoingStart));
+  const outgoingLoudness = windowRms(outgoingProfile, outgoingStart, Math.min(outgoingProfile.duration, outgoingStart + duration));
+  const incomingLoudness = windowRms(incomingProfile, incomingStart, Math.min(incomingProfile.duration, incomingStart + duration));
+  const incomingGain = clamp(outgoingLoudness / Math.max(incomingLoudness, 0.001), 0.66, 1);
+  const combinedBass = averageFrameValue(outgoingProfile, "bass", outgoingStart, outgoingStart + duration)
+    + averageFrameValue(incomingProfile, "bass", incomingStart, incomingStart + duration);
+  const bassCutDb = combinedBass > 1.18 ? clamp(-2.2 - (combinedBass - 1.18) * 5, -5.5, -2.2) : 0;
+  const playbackRate = mode === "beat_aligned" && tempoDifference <= 0.055 ? clamp(rawRate, 0.95, 1.05) : 1;
+  const phraseConfidence = clamp(rhythmConfidence * (mode === "beat_aligned" ? 0.9 : 0.55), 0, 1);
+  const confidence = clamp(compatibility * 0.58 + rhythmConfidence * 0.42, 0, 1);
   return {
     outgoingStart,
     incomingStart,
-    duration: Math.min(mixSeconds, outgoingProfile.duration - outgoingStart - 0.08),
+    duration,
     playbackRate,
     incomingGain,
+    bassCutDb,
     confidence,
+    mode,
+    curve: mode === "clean_handoff" ? "short_s" : "equal_power",
+    measured: {
+      outgoingBpm: Number(outgoingBpm.toFixed(1)),
+      incomingBpm: Number(incomingBpm.toFixed(1)),
+      rhythmConfidence: Number(rhythmConfidence.toFixed(3)),
+      energyDifference: Number(energyDifference.toFixed(3)),
+      loudnessRatio: Number((outgoingLoudness / Math.max(incomingLoudness, 0.001)).toFixed(3)),
+      frequencyBalance: Number(spectralCompatibility.toFixed(3)),
+      harmonicCompatibility: Number(harmonicCompatibility.toFixed(3)),
+    },
+    estimates: {
+      phraseBoundaryConfidence: Number(phraseConfidence.toFixed(3)),
+      vocalActivityUsed: vocalEstimateReliable,
+      vocalActivityReliability: Number(Math.min(outgoingVocalReliability, incomingVocalReliability).toFixed(3)),
+    },
     source: "preview-analysis",
   };
 }

@@ -35,13 +35,13 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
     if (!audio) return;
     if (isPlaying) {
       audio.pause();
-      audio.currentTime = 0;
       onPreviewChange(null);
       return;
     }
     onPreviewChange(rec);
     try {
-      const started = await playTrackAfterReveal(audio, rec, onBeforePlayback);
+      const isResume = audio.currentTime > 0.05 && !audio.ended;
+      const started = isResume ? await audio.play().then(() => true) : await playTrackAfterReveal(audio, rec, onBeforePlayback);
       if (!started) {
         onPreviewChange(null);
         return;
@@ -98,7 +98,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
       </div>
       {rec.preview_url && <small className="preview-credit">30-second preview courtesy of iTunes</small>}
       {rec.preview_url && (
-        <audio ref={audioRef} src={rec.preview_url} preload="none" onTimeUpdate={(event) => { if (event.currentTarget.currentTime >= 30) completePreview(); }} onEnded={completePreview} />
+        <audio ref={audioRef} crossOrigin="anonymous" src={rec.preview_url} preload="none" onTimeUpdate={(event) => { if (event.currentTarget.currentTime >= 30) completePreview(); }} onEnded={completePreview} />
       )}
     </motion.article>
   );

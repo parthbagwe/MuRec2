@@ -56,6 +56,18 @@ function rgba(hex, alpha) {
   return `rgba(${number >> 16}, ${(number >> 8) & 255}, ${number & 255}, ${alpha})`;
 }
 
+function blendHex(first, second, amount) {
+  const rgb = (hex) => {
+    const value = String(hex || "#ffffff").replace("#", "").padEnd(6, "f").slice(0, 6);
+    const number = Number.parseInt(value, 16);
+    return [number >> 16, (number >> 8) & 255, number & 255];
+  };
+  const from = rgb(first);
+  const to = rgb(second);
+  const channel = (index) => Math.round(from[index] + (to[index] - from[index]) * clamp(amount));
+  return `#${[channel(0), channel(1), channel(2)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export default function FullscreenVisualizer({
   track,
   nextTrack,
@@ -63,6 +75,7 @@ export default function FullscreenVisualizer({
   activeIndex,
   isPlaying,
   crossfading,
+  transition,
   currentTime,
   duration,
   palette,
@@ -104,6 +117,7 @@ export default function FullscreenVisualizer({
     if (!canvas) return undefined;
     const context = canvas.getContext("2d");
     const colors = palette?.length >= 3 ? palette : ["#f0ff37", "#6c57ff", "#ff5aa5"];
+    const incomingColors = [colors[2], colors[0], colors[1]];
     const seed = seedFor(track);
     const smoothed = fallbackTelemetry(track, timeRef.current);
     let animationFrame = 0;
@@ -127,6 +141,7 @@ export default function FullscreenVisualizer({
       else visualTime = timeRef.current;
 
       const telemetry = getAudioTelemetry?.();
+      const frameColors = colors.map((color, index) => blendHex(color, incomingColors[index], telemetry?.blend || 0));
       const fallback = fallbackTelemetry(track, visualTime);
       const target = telemetry?.primary
         ? mixTelemetry(telemetry.primary, telemetry.secondary, telemetry.blend)
@@ -140,9 +155,9 @@ export default function FullscreenVisualizer({
 
       context.clearRect(0, 0, width, height);
       const backdrop = context.createRadialGradient(centerX, centerY, shortSide * 0.03, centerX, centerY, Math.max(width, height) * 0.76);
-      backdrop.addColorStop(0, rgba(colors[0], 0.12 + smoothed.level * 0.15));
-      backdrop.addColorStop(0.34, rgba(colors[1], 0.09 + smoothed.bass * 0.08));
-      backdrop.addColorStop(0.72, rgba(colors[2], 0.045 + smoothed.brightness * 0.055));
+      backdrop.addColorStop(0, rgba(frameColors[0], 0.12 + smoothed.level * 0.15));
+      backdrop.addColorStop(0.34, rgba(frameColors[1], 0.09 + smoothed.bass * 0.08));
+      backdrop.addColorStop(0.72, rgba(frameColors[2], 0.045 + smoothed.brightness * 0.055));
       backdrop.addColorStop(1, "#030305");
       context.fillStyle = backdrop;
       context.fillRect(0, 0, width, height);
@@ -181,7 +196,7 @@ export default function FullscreenVisualizer({
           const y = baseY + (fundamental + harmonic + transient) * amplitude * envelope;
           if (x < 0) context.moveTo(x, y); else context.lineTo(x, y);
         }
-        const lineColor = row % 4 === 0 ? colors[0] : row % 2 === 0 ? colors[2] : colors[1];
+        const lineColor = row % 4 === 0 ? frameColors[0] : row % 2 === 0 ? frameColors[2] : frameColors[1];
         context.strokeStyle = rgba(lineColor, 0.08 + centreWeight * 0.3 + smoothed.level * 0.08);
         context.lineWidth = 0.65 + centreWeight * 1.15 + beatKick * 0.75;
         context.stroke();
@@ -197,10 +212,10 @@ export default function FullscreenVisualizer({
         const y = centerY + (low + high) * heroAmplitude * envelope;
         if (x === 0) context.moveTo(x, y); else context.lineTo(x, y);
       }
-      context.strokeStyle = rgba(colors[0], 0.58 + smoothed.level * 0.34);
+      context.strokeStyle = rgba(frameColors[0], 0.58 + smoothed.level * 0.34);
       context.lineWidth = 1.8 + beatKick * 3.4;
       context.shadowBlur = 12 + smoothed.transient * 24;
-      context.shadowColor = colors[0];
+      context.shadowColor = frameColors[0];
       context.stroke();
 
       if (crossfadingRef.current) {
@@ -211,9 +226,9 @@ export default function FullscreenVisualizer({
           const y = centerY + Math.sin(nx * Math.PI * 4.4 + visualTime * 1.18) * heroAmplitude * 0.78 * envelope;
           if (x === 0) context.moveTo(x, y); else context.lineTo(x, y);
         }
-        context.strokeStyle = rgba(colors[2], 0.72);
+        context.strokeStyle = rgba(frameColors[2], 0.72);
         context.lineWidth = 2.2;
-        context.shadowColor = colors[2];
+        context.shadowColor = frameColors[2];
         context.stroke();
       }
       context.restore();
@@ -257,9 +272,9 @@ export default function FullscreenVisualizer({
         <span>Cerum / live sine field</span>
         <div className="heightmap-telemetry">
           <span ref={modeLabelRef}>listening to preview</span>
-          <span>{track.bpm ? `${Math.round(track.bpm)} bpm` : "tempo measured"}</span>
-          <span>{track.musical_key || track.key || "harmony measured"}</span>
-          <strong>{crossfading ? "two signals blending" : "audio reactive"}</strong>
+          <span>{track.bpm ? `${Math.round(track.bpm)} bpm estimate` : "tempo estimate pending"}</span>
+          <span>{track.musical_key || track.key ? `${track.musical_key || track.key} key estimate` : "harmony estimate pending"}</span>
+          <strong>{crossfading ? `${transition?.mode === "beat_aligned" ? "beat-aligned" : transition?.mode === "clean_handoff" ? "clean handoff" : "gentle crossfade"}` : "audio reactive"}</strong>
         </div>
         <button onClick={onClose} aria-label="Close full-screen visuals">Exit visuals <kbd>Esc</kbd></button>
       </header>
@@ -274,7 +289,7 @@ export default function FullscreenVisualizer({
 
       <section className="heightmap-deck" aria-label="AutoMix controls">
         <div className="heightmap-now">
-          <small>{crossfading ? "Phrase-aware blend live" : "Now playing"}</small>
+          <small>{crossfading ? `${transition?.estimates?.phraseBoundaryConfidence >= 0.55 ? "Phrase-estimated" : "Adaptive"} blend live` : "Now playing"}</small>
           <strong>{track.title}</strong>
           <span>{track.artist}</span>
         </div>

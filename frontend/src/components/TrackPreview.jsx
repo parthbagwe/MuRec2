@@ -32,13 +32,13 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
     setPlaybackError("");
     if (isPlaying) {
       audio.pause();
-      audio.currentTime = 0;
       onPreviewChange(null);
       return;
     }
     onPreviewChange(track);
     try {
-      const started = await playTrackAfterReveal(audio, track, onBeforePlayback);
+      const isResume = audio.currentTime > 0.05 && !audio.ended;
+      const started = isResume ? await audio.play().then(() => true) : await playTrackAfterReveal(audio, track, onBeforePlayback);
       if (!started) {
         onPreviewChange(null);
         return;
@@ -78,6 +78,7 @@ export default function TrackPreview({ track, playingTrackId, onPreviewChange, o
       {track.preview_url && (
         <audio
           ref={audioRef}
+          crossOrigin="anonymous"
           src={track.preview_url}
           preload="none"
           onTimeUpdate={(event) => { if (event.currentTarget.currentTime >= 30) completePreview(); }}

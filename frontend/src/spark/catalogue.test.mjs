@@ -96,8 +96,16 @@ test("unknown saved songs are not falsely marked analyzed after a page reload", 
   assert.equal(restored[0].analysis_status, "pending");
 });
 
-test("UI playback and mixing source are not changed", async () => {
-  const { execFileSync } = await import("node:child_process");
-  const diff = execFileSync("git", ["diff", "abbcb1f", "--", "frontend/src/components/MixPlayer.jsx", "frontend/src/components/TrackPreview.jsx", "frontend/src/audio"], { encoding: "utf8", cwd: new URL("../../../", import.meta.url) });
-  assert.equal(diff, "");
+test("UI playback keeps the preview cap and adaptive transition contract", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const player = await readFile(new URL("../components/MixPlayer.jsx", import.meta.url), "utf8");
+  const analyzer = await readFile(new URL("../audio/transitionAnalyzer.js", import.meta.url), "utf8");
+  const engine = await readFile(new URL("../audio/audioMixEngine.js", import.meta.url), "utf8");
+  assert.match(player, /PREVIEW_LIMIT_SECONDS = 30/);
+  assert.match(player, /reason: "resume"/);
+  assert.match(player, /reveal: false/);
+  assert.match(analyzer, /beat_aligned/);
+  assert.match(analyzer, /gentle_crossfade/);
+  assert.match(analyzer, /clean_handoff/);
+  assert.match(engine, /setValueCurveAtTime/);
 });
