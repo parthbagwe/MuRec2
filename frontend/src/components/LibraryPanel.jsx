@@ -1,11 +1,8 @@
-import { useState } from "react";
-
 function formatDate(value) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-export default function LibraryPanel({ open, onClose, favorites, history, onRemoveFavorite, onClearHistory, onChooseFavorite }) {
-  const [tab, setTab] = useState("favorites");
+export default function LibraryPanel({ open, activeTab = "favorites", onTabChange, onClose, favorites, history, onRemoveFavorite, onClearHistory, onChooseFavorite }) {
   if (!open) return null;
 
   return (
@@ -16,11 +13,11 @@ export default function LibraryPanel({ open, onClose, favorites, history, onRemo
           <button className="modal-close" onClick={onClose} aria-label="Close library">×</button>
         </div>
         <div className="library-tabs">
-          <button className={tab === "favorites" ? "active" : ""} onClick={() => setTab("favorites")}>Favourites <span>{favorites.length}</span></button>
-          <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>History <span>{history.length}</span></button>
+          <button className={activeTab === "favorites" ? "active" : ""} onClick={() => onTabChange("favorites")}>Favourites <span>{favorites.length}</span></button>
+          <button className={activeTab === "history" ? "active" : ""} onClick={() => onTabChange("history")}>History <span>{history.length}</span></button>
         </div>
 
-        {tab === "favorites" && (
+        {activeTab === "favorites" && (
           <div className="library-list">
             {favorites.length === 0 && <p className="empty-state">No favourites yet. Use the heart on any recommendation to save it here.</p>}
             {favorites.map((track) => (
@@ -35,7 +32,7 @@ export default function LibraryPanel({ open, onClose, favorites, history, onRemo
           </div>
         )}
 
-        {tab === "history" && (
+        {activeTab === "history" && (
           <div className="history-wrap">
             <div className="history-tools"><p>Recommendations are saved automatically while signed in.</p>{history.length > 0 && <button className="text-button danger" onClick={onClearHistory}>Clear history</button>}</div>
             {history.length === 0 && <p className="empty-state">No recommendation history yet.</p>}

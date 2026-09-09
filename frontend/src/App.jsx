@@ -80,6 +80,8 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [authOpen, setAuthOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [libraryTab, setLibraryTab] = useState("favorites");
+  const [activeSection, setActiveSection] = useState("discover");
   const [indexStatus, setIndexStatus] = useState(null);
   const [mixQueue, setMixQueue] = useState([]);
   const [mixLoading, setMixLoading] = useState(false);
@@ -370,6 +372,14 @@ export default function App() {
   }
   async function eraseHistory() { const revision = accountRevision.current; await clearHistory(); if (revision === accountRevision.current) setHistory([]); }
   function authenticated(account) { accountRevision.current++; setUser(account); setFavorites([]); setHistory([]); refreshLibrary(); }
+  function openLibrary(tab = "favorites") {
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    setLibraryTab(tab);
+    setLibraryOpen(true);
+  }
 
   return (
     <main className={`app-shell mood-${activeMood.id}`}>
@@ -388,7 +398,7 @@ export default function App() {
           className="mood-layer"
           style={{ "--mood-a": activeMood.colors[0], "--mood-b": activeMood.colors[1], "--mood-c": activeMood.colors[2] }}
           initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+          animate={{ opacity: 0.1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: reducedMotion ? .2 : 3, ease: "linear" }}
           aria-hidden="true"
@@ -405,30 +415,26 @@ export default function App() {
           {indexStatus ? <span className="search-health" title={indexStatus.building ? "Acoustic analysis updating" : "Acoustic analysis ready"}><i className={indexStatus.building ? "status-dot building" : "status-dot"} />Acoustic search</span> : null}
         </div>
         <nav className="account-nav" aria-label="Account">
-          {user ? <><button className="header-button" onClick={() => setLibraryOpen(true)}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}{user.provider && ` · ${user.provider === 'firebase' ? 'Firebase' : 'Supabase'}`}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <><button className="text-button" onClick={() => setAuthOpen(true)}>Sign up</button><button className="header-button" onClick={() => setAuthOpen(true)}>Log in</button></>}
+          {user ? <><button className="header-button" onClick={() => openLibrary("favorites")}>Library <span>{favorites.length}</span></button><span className="account-name">{user.display_name}{user.provider && ` · ${user.provider === 'firebase' ? 'Firebase' : 'Supabase'}`}</span><button className="text-button" onClick={signOut}>Sign out</button></> : <><button className="text-button" onClick={() => setAuthOpen(true)}>Sign up</button><button className="header-button" onClick={() => setAuthOpen(true)}>Log in</button></>}
         </nav>
       </motion.header>
 
       <div className="app-layout">
         <aside className="app-sidebar" aria-label="Cerum library and shortcuts">
-          <p className="studio-overline sidebar-label">LISTEN & EXPLORE</p>
           <nav className="sidebar-shortcuts" aria-label="Library shortcuts">
-            <a className="discover-link" href="#top"><StudioIcon name="discover" />Discover</a>
-            <a className="mix-link" href="#mix"><StudioIcon name="mix" />Mix studio <small>5 tracks</small></a>
-            <a className="charts-link" href="#charts"><StudioIcon name="chart" />Top charts</a>
+            <a className={`discover-link ${activeSection === "discover" ? "is-active" : ""}`} href="#top" aria-current={activeSection === "discover" ? "page" : undefined} onClick={() => setActiveSection("discover")}><StudioIcon name="discover" /><span>Discover</span></a>
+            <a className={`mix-link ${activeSection === "mix" ? "is-active" : ""}`} href="#mix" aria-current={activeSection === "mix" ? "page" : undefined} onClick={() => setActiveSection("mix")}><StudioIcon name="mix" /><span>Mix studio</span></a>
+            <a className={`charts-link ${activeSection === "charts" ? "is-active" : ""}`} href="#charts" aria-current={activeSection === "charts" ? "page" : undefined} onClick={() => setActiveSection("charts")}><StudioIcon name="chart" /><span>Charts</span></a>
           </nav>
-          <div className="sidebar-heading"><strong>Your library</strong><button aria-label="Open your library" onClick={() => user ? setLibraryOpen(true) : setAuthOpen(true)}>+</button></div>
+          <div className="sidebar-heading"><strong>Your library</strong>{user && <button aria-label="Open your library" onClick={() => openLibrary("favorites")}>Open</button>}</div>
           {user ? (
-            <button className="sidebar-library-card" onClick={() => setLibraryOpen(true)}>
-              <span className="sidebar-saved-icon"><StudioIcon name="heart" /></span>
-              <span><strong>Saved music</strong><small>{favorites.length} favourites · {history.length} recent mixes</small></span>
-            </button>
+            <div className="sidebar-library-links">
+              <button onClick={() => openLibrary("favorites")}><StudioIcon name="heart" /><span>Favourites</span><strong>{favorites.length}</strong></button>
+              <button onClick={() => openLibrary("history")}><StudioIcon name="history" /><span>Recent mixes</span><strong>{history.length}</strong></button>
+            </div>
           ) : (
-            <>
-              <div className="sidebar-promo"><StudioIcon name="library" /><strong>A little more you.</strong><p>Your favourites and past mixes, together in one place.</p><button onClick={() => setAuthOpen(true)}>Create your library <StudioIcon name="arrow" /></button></div>
-            </>
+            <div className="sidebar-signin"><strong>Save your music</strong><p>Sign in to keep favourites and recent mixes.</p><button onClick={() => setAuthOpen(true)}>Sign in</button></div>
           )}
-          <div className="sidebar-listening-note"><StudioIcon name="headphones" /><strong>Made for a closer listen.</strong><p>Find music through rhythm, texture and feeling.</p></div>
           <div className="sidebar-legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a><span>Audio previews only</span></div>
         </aside>
 
@@ -485,10 +491,10 @@ export default function App() {
           <footer><span>cerum. <span>For the love of finding music.</span></span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
         </div>
       </div>
-      <nav className="mobile-dock" aria-label="Mobile navigation"><a href="#top"><StudioIcon name="discover" /><span>Discover</span></a><a href="#mix"><StudioIcon name="mix" /><span>Mix studio</span></a><a href="#charts"><StudioIcon name="chart" /><span>Charts</span></a><button onClick={() => user ? setLibraryOpen(true) : setAuthOpen(true)}><StudioIcon name="library" /><span>Library</span></button></nav>
+      <nav className="mobile-dock" aria-label="Mobile navigation"><a href="#top"><StudioIcon name="discover" /><span>Discover</span></a><a href="#mix"><StudioIcon name="mix" /><span>Mix studio</span></a><a href="#charts"><StudioIcon name="chart" /><span>Charts</span></a><button onClick={() => openLibrary("favorites")}><StudioIcon name="library" /><span>Library</span></button></nav>
       <GenreGate track={genrePrompt?.track} onChoose={confirmGenreScope} onCancel={() => setGenrePrompt(null)} />
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
-      <LibraryPanel open={libraryOpen} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={requestGenreChoice} />
+      <LibraryPanel open={libraryOpen} activeTab={libraryTab} onTabChange={setLibraryTab} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={requestGenreChoice} />
       <AnalysisLoading state={analysisLoading} />
       <MixPlayer queue={mixQueue} loading={mixLoading} autoPlayToken={autoPlayToken} playbackHandoff={playbackHandoff} externalPlayingTrackId={playingTrackId} palette={activeMood.colors} onTrackChange={handleMixTrackChange} onInteraction={handleInteraction} onBeforePlayback={showPlaybackReveal} />
     </main>
