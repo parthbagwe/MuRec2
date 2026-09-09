@@ -397,9 +397,14 @@ footer a:hover { color: var(--acid); }
 .mix-player { position: fixed !important; z-index: 72 !important; right: 14px; bottom: 14px; left: 14px; color: white; filter: drop-shadow(0 16px 30px #0009); }
 .mix-player-bar { position: relative; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(300px, 1.25fr) minmax(250px, 1fr); min-height: 86px; border: 1px solid #ffffff55; background: #11110ff2; backdrop-filter: blur(22px); }
 .mix-now { display: flex; min-width: 0; gap: 13px; align-items: center; padding: 11px 16px; border-right: 1px solid #ffffff2e; }
-.mix-artwork { display: grid; flex: 0 0 58px; width: 58px; height: 58px; overflow: hidden; border-radius: 50%; background: var(--acid); color: var(--ink); font-size: 20px; font-weight: 800; place-items: center; }
+.mix-artwork { position: relative; display: grid; flex: 0 0 58px; width: 58px; height: 58px; overflow: hidden; border-radius: 50%; background: var(--acid); color: var(--ink); font-size: 20px; font-weight: 800; place-items: center; }
 .mix-artwork.spinning { animation: mix-spin 7s linear infinite; }
 .mix-artwork img { width: 100%; height: 100%; object-fit: cover; }
+.mix-artwork .mix-artwork-layer { position: absolute; inset: 0; }
+.mix-artwork-outgoing { animation: artwork-fade-out var(--artwork-blend-duration, 3s) linear both; }
+.mix-artwork-incoming { animation: artwork-fade-in var(--artwork-blend-duration, 3s) linear both; }
+@keyframes artwork-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes artwork-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mix-spin { to { transform: rotate(360deg); } }
 .mix-now > div:last-child { display: grid; min-width: 0; gap: 2px; }
 .mix-now small, .mix-queue-heading small { color: var(--acid); font: 8px var(--mono); letter-spacing: .1em; text-transform: uppercase; }

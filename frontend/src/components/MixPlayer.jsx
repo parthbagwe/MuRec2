@@ -691,6 +691,11 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
 
   if (!activeTrack) return null;
   const artwork = activeTrack.artwork_url?.replace("100x100bb", "300x300bb");
+  const outgoingArtwork = activeTransition?.fromTrack?.artwork_url?.replace("100x100bb", "300x300bb");
+  const incomingArtwork = activeTransition?.toTrack?.artwork_url?.replace("100x100bb", "300x300bb");
+  const artworkBlendStyle = activeTransition
+    ? { "--artwork-blend-duration": `${Math.max(0.5, activeTransition.duration)}s` }
+    : undefined;
   const playableFollowups = Math.max(0, queue.filter((track, index) => index > 0 && track.preview_url).length);
 
   return (
@@ -749,7 +754,14 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
 
       <div className="mix-player-bar">
         <div className="mix-now">
-          <div className={`mix-artwork ${isPlaying ? "spinning" : ""}`}>{artwork ? <img src={artwork} alt="" /> : <span>{activeTrack.title.slice(0, 1)}</span>}</div>
+          <div className={`mix-artwork ${isPlaying ? "spinning" : ""}`} aria-hidden="true">
+            {activeTransition && outgoingArtwork && incomingArtwork ? (
+              <>
+                <img className="mix-artwork-layer mix-artwork-outgoing" src={outgoingArtwork} alt="" style={artworkBlendStyle} />
+                <img className="mix-artwork-layer mix-artwork-incoming" src={incomingArtwork} alt="" style={artworkBlendStyle} />
+              </>
+            ) : artwork ? <img src={artwork} alt="" /> : <span>{activeTrack.title.slice(0, 1)}</span>}
+          </div>
           <div><small>{crossfading ? "Blending now" : "Now playing"}</small><strong>{activeTrack.title}</strong><span>{activeTrack.artist}</span></div>
         </div>
         <div className="mix-transport">
