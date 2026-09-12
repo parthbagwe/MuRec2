@@ -180,7 +180,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, [queue]);
 
   useEffect(() => {
-    for (let index = activeIndex; index <= Math.min(queue.length - 1, activeIndex + 2); index += 1) {
+    for (let index = activeIndex; index <= Math.min(queue.length - 1, activeIndex + 1); index += 1) {
       const audio = audioRefs.current[index];
       if (audio && audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) audio.load();
     }
@@ -195,10 +195,6 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
   }, []);
 
   useEffect(() => {
-    const playable = queue
-      .map((track, index) => ({ track, index }))
-      .filter(({ track }) => Boolean(track.preview_url));
-    const pairs = playable.slice(0, -1).map((entry, index) => ({ from: entry.track, to: playable[index + 1].track }));
     const activeToIndex = queue.findIndex((track, index) => index > activeIndex && Boolean(track.preview_url));
     const activeKey = activeToIndex >= 0 ? transitionKey(queue[activeIndex], queue[activeToIndex]) : null;
     if (!activeKey) {
@@ -211,7 +207,9 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       setMixPlanStatus("analyzing");
     }
     let cancelled = false;
-    Promise.allSettled(pairs.map(async ({ from, to }) => {
+    let idleHandle = null;
+    let idleTimer = null;
+    const preparePair = async (from, to) => {
       const key = transitionKey(from, to);
       if (transitionPlansRef.current.has(key)) return;
       const [outgoingProfile, incomingProfile] = await Promise.all([
@@ -221,11 +219,29 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       analysisProfilesRef.current.set(from.preview_url, outgoingProfile);
       analysisProfilesRef.current.set(to.preview_url, incomingProfile);
       transitionPlansRef.current.set(key, buildTransitionPlan(outgoingProfile, incomingProfile, from, to));
-    })).then(() => {
+    };
+    const prepareActivePair = async () => {
+      try {
+        await preparePair(queue[activeIndex], queue[activeToIndex]);
+      } catch {
+        // The safe crossfade remains available if acoustic analysis cannot finish.
+      }
       if (cancelled) return;
       setMixPlanStatus(transitionPlansRef.current.has(activeKey) ? "ready" : "fallback");
-    });
-    return () => { cancelled = true; };
+      const followingToIndex = queue.findIndex((track, index) => index > activeToIndex && Boolean(track.preview_url));
+      if (followingToIndex < 0) return;
+      const prepareFollowingPair = () => {
+        if (!cancelled) preparePair(queue[activeToIndex], queue[followingToIndex]).catch(() => {});
+      };
+      if ("requestIdleCallback" in window) idleHandle = window.requestIdleCallback(prepareFollowingPair, { timeout: 8_000 });
+      else idleTimer = window.setTimeout(prepareFollowingPair, 1_200);
+    };
+    prepareActivePair();
+    return () => {
+      cancelled = true;
+      if (idleHandle !== null) window.cancelIdleCallback(idleHandle);
+      if (idleTimer !== null) window.clearTimeout(idleTimer);
+    };
   }, [activeIndex, queue]);
 
   useEffect(() => {
@@ -620,7 +636,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
       const plan = toIndex >= 0 ? transitionPlanFor(fromIndex, toIndex) : null;
       if (!audio || !plan || crossfadingRef.current || audio.paused || audio.ended) return;
       if (audio.currentTime >= plan.outgoingStart) beginCrossfade(fromIndex);
-    }, 40);
+    }, 120);
     return () => window.clearInterval(timer);
   }, [activeIndex, anchorKey, isPlaying, mixPlanStatus]);
 
@@ -780,7 +796,7 @@ export default function MixPlayer({ queue, loading, autoPlayToken, playbackHando
         </div>
       </div>
       {playbackError && <p className="mix-error" role="alert">{playbackError}</p>}
-      {queue.map((track, index) => track.preview_url && !(index === 0 && playbackHandoff?.trackId === track.track_id) && <audio key={`${track.track_id}-${index}-audio`} ref={(node) => { audioRefs.current[index] = node; }} crossOrigin="anonymous" src={track.preview_url} preload={index <= activeIndex + 2 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(previewDuration(event.currentTarget)); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} onError={() => handleAudioError(index)} />)}
+      {queue.map((track, index) => track.preview_url && !(index === 0 && playbackHandoff?.trackId === track.track_id) && <audio key={`${track.track_id}-${index}-audio`} ref={(node) => { audioRefs.current[index] = node; }} crossOrigin="anonymous" src={track.preview_url} preload={index <= activeIndex + 1 ? "auto" : "metadata"} onLoadedMetadata={(event) => { if (index === activeIndexRef.current) setDuration(previewDuration(event.currentTarget)); }} onTimeUpdate={() => handleTimeUpdate(index)} onEnded={() => handleEnded(index)} onError={() => handleAudioError(index)} />)}
     </motion.aside>
   );
 }

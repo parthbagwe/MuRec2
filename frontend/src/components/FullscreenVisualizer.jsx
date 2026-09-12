@@ -120,13 +120,24 @@ export default function FullscreenVisualizer({
     const incomingColors = [colors[2], colors[0], colors[1]];
     const seed = seedFor(track);
     const smoothed = fallbackTelemetry(track, timeRef.current);
+    const compactCanvas = window.innerWidth < 720;
+    const constrainedDevice = compactCanvas || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) || navigator.connection?.saveData;
+    const frameInterval = 1000 / (constrainedDevice ? 30 : 45);
+    const pixelRatioLimit = compactCanvas ? 1.2 : 1.5;
     let animationFrame = 0;
     let visualTime = timeRef.current;
-    let previousTimestamp = performance.now();
-    let frameCount = 0;
+    let previousTimestamp = performance.now() - frameInterval;
+    let lastModeLabel = "";
 
     const draw = (timestamp = performance.now()) => {
-      const ratio = Math.min(1.6, window.devicePixelRatio || 1);
+      animationFrame = 0;
+      if (document.hidden) return;
+      const elapsed = timestamp - previousTimestamp;
+      if (playingRef.current && !reducedMotion && elapsed < frameInterval) {
+        animationFrame = requestAnimationFrame(draw);
+        return;
+      }
+      const ratio = Math.min(pixelRatioLimit, window.devicePixelRatio || 1);
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       if (canvas.width !== Math.round(width * ratio) || canvas.height !== Math.round(height * ratio)) {
@@ -135,7 +146,7 @@ export default function FullscreenVisualizer({
         context.setTransform(ratio, 0, 0, ratio, 0, 0);
       }
 
-      const delta = Math.min(0.05, Math.max(0, (timestamp - previousTimestamp) / 1000));
+      const delta = Math.min(0.05, Math.max(0, elapsed / 1000));
       previousTimestamp = timestamp;
       if (playingRef.current && !reducedMotion) visualTime += delta;
       else visualTime = timeRef.current;
@@ -167,7 +178,7 @@ export default function FullscreenVisualizer({
       context.lineCap = "round";
       context.lineJoin = "round";
 
-      const guideCount = width < 720 ? 8 : 14;
+      const guideCount = compactCanvas ? 6 : 10;
       for (let guide = 0; guide < guideCount; guide += 1) {
         const y = height * (0.15 + guide / Math.max(1, guideCount - 1) * 0.66);
         context.beginPath();
@@ -178,7 +189,8 @@ export default function FullscreenVisualizer({
         context.stroke();
       }
 
-      const waveCount = width < 720 ? 12 : 22;
+      const waveCount = compactCanvas ? 9 : 16;
+      const waveStep = compactCanvas ? 10 : 9;
       for (let row = 0; row < waveCount; row += 1) {
         const lane = row / Math.max(1, waveCount - 1);
         const baseY = height * (0.16 + lane * 0.64);
@@ -187,7 +199,7 @@ export default function FullscreenVisualizer({
         const frequency = 1.25 + smoothed.brightness * 2.25 + lane * 0.55;
         const phase = visualTime * (0.55 + smoothed.bass * 0.85) + row * 0.34 + seed * 0.002;
         context.beginPath();
-        for (let x = -10; x <= width + 10; x += 8) {
+        for (let x = -10; x <= width + 10; x += waveStep) {
           const nx = x / Math.max(1, width);
           const envelope = Math.pow(Math.sin(clamp(nx) * Math.PI), 0.62);
           const fundamental = Math.sin(nx * Math.PI * 2 * frequency + phase);
@@ -204,7 +216,7 @@ export default function FullscreenVisualizer({
 
       const heroAmplitude = shortSide * (0.055 + smoothed.bass * 0.075 + beatKick * 0.035);
       context.beginPath();
-      for (let x = 0; x <= width; x += 4) {
+      for (let x = 0; x <= width; x += compactCanvas ? 6 : 5) {
         const nx = x / Math.max(1, width);
         const envelope = Math.pow(Math.sin(nx * Math.PI), 0.5);
         const low = Math.sin(nx * Math.PI * (3.1 + smoothed.bass * 1.8) - visualTime * (1 + smoothed.bass));
@@ -214,13 +226,13 @@ export default function FullscreenVisualizer({
       }
       context.strokeStyle = rgba(frameColors[0], 0.58 + smoothed.level * 0.34);
       context.lineWidth = 1.8 + beatKick * 3.4;
-      context.shadowBlur = 12 + smoothed.transient * 24;
+      context.shadowBlur = (compactCanvas ? 7 : 10) + smoothed.transient * (compactCanvas ? 14 : 20);
       context.shadowColor = frameColors[0];
       context.stroke();
 
       if (crossfadingRef.current) {
         context.beginPath();
-        for (let x = 0; x <= width; x += 5) {
+        for (let x = 0; x <= width; x += compactCanvas ? 7 : 6) {
           const nx = x / Math.max(1, width);
           const envelope = Math.pow(Math.sin(nx * Math.PI), 0.52);
           const y = centerY + Math.sin(nx * Math.PI * 4.4 + visualTime * 1.18) * heroAmplitude * 0.78 * envelope;
@@ -240,16 +252,24 @@ export default function FullscreenVisualizer({
       context.fillStyle = vignette;
       context.fillRect(0, 0, width, height);
 
-      frameCount += 1;
-      if (frameCount % 12 === 0) {
-        if (modeLabelRef.current) modeLabelRef.current.textContent = `sine field · ${telemetry?.analyzed ? "preview analyzed" : "acoustic profile"}`;
+      const modeLabel = `sine field · ${telemetry?.analyzed ? "preview analyzed" : "acoustic profile"}`;
+      if (modeLabel !== lastModeLabel) {
+        lastModeLabel = modeLabel;
+        if (modeLabelRef.current) modeLabelRef.current.textContent = modeLabel;
       }
-      animationFrame = requestAnimationFrame(draw);
+      if (playingRef.current && !reducedMotion) animationFrame = requestAnimationFrame(draw);
     };
 
     draw();
-    return () => cancelAnimationFrame(animationFrame);
-  }, [getAudioTelemetry, palette, reducedMotion, track]);
+    const handleVisibility = () => {
+      if (!document.hidden && playingRef.current && !animationFrame) animationFrame = requestAnimationFrame(draw);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [getAudioTelemetry, isPlaying, palette, reducedMotion, track]);
 
   const playableNext = queue?.findIndex((item, index) => index > activeIndex && item.preview_url) ?? -1;
   const progressMax = duration || 30;

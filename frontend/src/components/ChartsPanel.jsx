@@ -113,7 +113,7 @@ export default function ChartsPanel({ onSelect, onPreviewChange, onBeforePlaybac
             {visible.map((track) => (
               <li key={track.track_id}>
                 <span className="chart-rank">{String(track.chart_rank).padStart(2, "0")}</span>
-                {track.artwork_url ? <img src={track.artwork_url} alt="" /> : <span className="chart-artwork">{track.title.slice(0, 1)}</span>}
+                {track.artwork_url ? <img src={track.artwork_url} alt="" loading="lazy" decoding="async" /> : <span className="chart-artwork">{track.title.slice(0, 1)}</span>}
                 <button className="chart-track" onClick={() => choose(track)} disabled={!track.catalogued} title={track.catalogued ? "Build a Cerum mix from this song" : "Preview available; acoustic analysis pending"}>
                   <strong>{track.title}</strong><small>{track.artist}</small>
                 </button>

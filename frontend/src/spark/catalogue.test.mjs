@@ -101,11 +101,17 @@ test("UI playback keeps the preview cap and adaptive transition contract", async
   const player = await readFile(new URL("../components/MixPlayer.jsx", import.meta.url), "utf8");
   const analyzer = await readFile(new URL("../audio/transitionAnalyzer.js", import.meta.url), "utf8");
   const engine = await readFile(new URL("../audio/audioMixEngine.js", import.meta.url), "utf8");
+  const visualizer = await readFile(new URL("../components/FullscreenVisualizer.jsx", import.meta.url), "utf8");
   assert.match(player, /PREVIEW_LIMIT_SECONDS = 30/);
   assert.match(player, /reason: "resume"/);
   assert.match(player, /reveal: false/);
+  assert.match(player, /activeIndex \+ 1/);
+  assert.doesNotMatch(player, /activeIndex \+ 2/);
+  assert.match(player, /requestIdleCallback/);
   assert.match(analyzer, /beat_aligned/);
   assert.match(analyzer, /gentle_crossfade/);
   assert.match(analyzer, /clean_handoff/);
   assert.match(engine, /setValueCurveAtTime/);
+  assert.match(visualizer, /constrainedDevice \? 30 : 45/);
+  assert.match(visualizer, /playingRef\.current && !reducedMotion/);
 });
