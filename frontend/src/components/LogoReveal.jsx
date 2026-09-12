@@ -47,9 +47,6 @@ export default function LogoReveal() {
             </div>
             <span className="logo-reveal-progress"><i /></span>
           </div>
-          <button type="button" onClick={() => setVisible(false)}>
-            Skip intro
-          </button>
         </motion.section>
       ) : null}
     </AnimatePresence>

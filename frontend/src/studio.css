@@ -28,8 +28,6 @@ button, a { transition: background-color .2s, color .2s, border-color .2s, box-s
 .logo-reveal-lockup strong em { color: #edaa88; font-style: normal; }
 .logo-reveal-progress { position: absolute; right: clamp(28px, 4vw, 64px); bottom: clamp(28px, 4vw, 64px); left: clamp(28px, 4vw, 64px); height: 1px; overflow: hidden; background: #ffffff12; }
 .logo-reveal-progress i { display: block; width: 100%; height: 100%; background: #edaa88; transform: scaleX(0); transform-origin: left; animation: cerumRevealProgress 1.45s .02s linear forwards; }
-.logo-reveal button { position: absolute; top: max(24px, env(safe-area-inset-top)); right: max(24px, env(safe-area-inset-right)); min-height: 42px; padding: 0 15px; border: 1px solid #f3f0e933; border-radius: 8px; background: #191a1acc; color: #c9c6bf; font: 600 10px var(--sans); letter-spacing: .04em; }
-.logo-reveal button:hover, .logo-reveal button:focus-visible { border-color: #edaa88; color: #fff; background: #24201e; }
 .app-shell > .playback-reveal { z-index: 520; }
 .playback-reveal::before { animation-duration: 1.5s; }
 .playback-reveal .logo-reveal-kicker { color: #edaa88; animation-duration: .3s; animation-delay: .04s; }
@@ -571,7 +569,6 @@ footer > span > span { font-weight: 400; color: #909681; }
   .logo-reveal-lockup { flex-direction: column; gap: 22px; }
   .logo-reveal-mark { width: 132px; height: 180px; }
   .logo-reveal-lockup strong { font-size: clamp(68px, 22vw, 104px); }
-  .logo-reveal button { top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
