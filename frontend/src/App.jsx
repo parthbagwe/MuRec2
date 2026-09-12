@@ -491,7 +491,12 @@ export default function App() {
           <footer><span>cerum. <span>For the love of finding music.</span></span><nav aria-label="Legal"><a href="/privacy.html">Privacy</a><a href="/terms.html">Terms</a></nav></footer>
         </div>
       </div>
-      <nav className="mobile-dock" aria-label="Mobile navigation"><a href="#top"><StudioIcon name="discover" /><span>Discover</span></a><a href="#mix"><StudioIcon name="mix" /><span>Mix studio</span></a><a href="#charts"><StudioIcon name="chart" /><span>Charts</span></a><button onClick={() => openLibrary("favorites")}><StudioIcon name="library" /><span>Library</span></button></nav>
+      <nav className="mobile-dock" aria-label="Mobile navigation">
+        <a className={activeSection === "discover" ? "is-active" : ""} href="#top" aria-current={activeSection === "discover" ? "page" : undefined} onClick={() => setActiveSection("discover")}><StudioIcon name="discover" /><span>Discover</span></a>
+        <a className={activeSection === "mix" ? "is-active" : ""} href="#mix" aria-current={activeSection === "mix" ? "page" : undefined} onClick={() => setActiveSection("mix")}><StudioIcon name="mix" /><span>Mix studio</span></a>
+        <a className={activeSection === "charts" ? "is-active" : ""} href="#charts" aria-current={activeSection === "charts" ? "page" : undefined} onClick={() => setActiveSection("charts")}><StudioIcon name="chart" /><span>Charts</span></a>
+        <button className={libraryOpen ? "is-active" : ""} aria-pressed={libraryOpen} onClick={() => openLibrary("favorites")}><StudioIcon name="library" /><span>Library</span></button>
+      </nav>
       <GenreGate track={genrePrompt?.track} onChoose={confirmGenreScope} onCancel={() => setGenrePrompt(null)} />
       <AuthPanel open={authOpen} onClose={() => setAuthOpen(false)} onAuthenticated={authenticated} />
       <LibraryPanel open={libraryOpen} activeTab={libraryTab} onTabChange={setLibraryTab} onClose={() => setLibraryOpen(false)} favorites={favorites} history={history} onRemoveFavorite={async (id) => { await removeFavorite(id); refreshLibrary(); }} onClearHistory={eraseHistory} onChooseFavorite={requestGenreChoice} />
