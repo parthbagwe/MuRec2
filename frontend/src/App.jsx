@@ -392,6 +392,8 @@ export default function App() {
   }
 
   async function signOut() {
+    liveAIRequest.current?.abort();
+    setLiveAI(null);
     accountRevision.current++;
     await logout().catch(() => {});
     setUser(null); setFavorites([]); setHistory([]); setLibraryOpen(false);
@@ -409,6 +411,8 @@ export default function App() {
     setMoodTrack(track || null);
   }, []);
   function dismissRecommendation(track) {
+    liveAIRequest.current?.abort();
+    setLiveAI(null);
     setRecommendations((items) => items.filter((item) => item.track_id !== track.track_id));
     if (user) recordEvent(track.track_id, "disliked").catch(() => {});
   }
@@ -434,7 +438,11 @@ export default function App() {
     } catch (requestError) { setError(requestError.message || 'Could not save your feedback.'); }
   }
   async function eraseHistory() { const revision = accountRevision.current; await clearHistory(); if (revision === accountRevision.current) setHistory([]); }
-  function authenticated(account) { accountRevision.current++; setUser(account); setFavorites([]); setHistory([]); refreshLibrary(); }
+  function authenticated(account) {
+    liveAIRequest.current?.abort();
+    setLiveAI(null);
+    accountRevision.current++; setUser(account); setFavorites([]); setHistory([]); refreshLibrary();
+  }
   function openLibrary(tab = "favorites") {
     if (!user) {
       setAuthOpen(true);
