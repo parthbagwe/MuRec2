@@ -110,6 +110,17 @@ pause/resume, manual skip and a real two-element automatic overlap/advancement.
 These are not tests on physical phones, Safari or Firefox. Vercel production timing
 is recorded separately when the deployed endpoint is checked.
 
+Live verification on `cerum.vercel.app`: the public endpoint returned a genuine
+512-dimensional CLAP result for a real preview (HTTP 200), and rejected wrong MIME,
+short payload and other-origin requests (415/400/403, all `no-store`). Real desktop
+and phone-emulated searches/refinement/cache reloads passed on Edge 155. This local
+network reset/stalled some default HTTP/2 browser uploads; its 45-second timeout
+left the acoustic mix running as designed. Stable-transport live checks used
+`CERUM_TEST_HTTP1=1` (disables HTTP/2/QUIC in the **test browser only**); no browser
+settings or network protocol were changed for site visitors. A live warm inference
+measured 1.153 seconds server-side. Upload/connection time can be much longer, so
+these checks do not establish reliable 5–10-second latency on every phone/network.
+
 ## Ranking and feedback
 
 The existing generated acoustic engine accepts an optional ranking hook. Learned

@@ -5,8 +5,15 @@ import { mkdir } from 'node:fs/promises';
 const { chromium } = createRequire(import.meta.url)(process.env.CERUM_PLAYWRIGHT_MODULE || 'playwright');
 const url = process.argv[2] || 'http://127.0.0.1:5175/';
 if (!/^http:\/\/127\.0\.0\.1:5175\/?$/.test(url) && !/^https:\/\/cerum(?:-[a-z0-9-]+)?\.vercel\.app\/?$/.test(url)) throw new Error('Use Cerum local or Vercel URL');
-const browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+const browser = await chromium.launch({ channel: 'msedge', headless: true,
+  args: ['--autoplay-policy=no-user-gesture-required', ...(process.env.CERUM_TEST_HTTP1 === '1' ? ['--disable-quic', '--disable-http2'] : [])] });
 const report = [];
+async function navigate(page) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await page.goto(url, { waitUntil: 'domcontentloaded' }); }
+    catch (error) { if (attempt >= 2 || !/ERR_CONNECTION_RESET/.test(error.message)) throw error; }
+  }
+}
 const folder = new URL('../../.cache/on-demand-browser/', import.meta.url);
 await mkdir(folder, { recursive: true });
 try {
@@ -20,14 +27,19 @@ try {
     });
     await page.addInitScript(() => localStorage.setItem('cerum.genre-scope.v1', 'nearby'));
     const open = async () => {
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
+      await navigate(page);
       await page.getByRole('textbox', { name: 'Search songs' }).fill('One Dance Drake');
       await page.locator('.search-results button').first().waitFor({ timeout: 30000 });
       await page.locator('.search-results button').first().click();
       await page.locator('.recommendation-card').nth(11).waitFor({ timeout: 60000 });
     };
     await open();
-    await page.locator('.live-ai-status[data-state="ready"]').waitFor({ timeout: 60000 });
+    try { await page.locator('.live-ai-status[data-state="ready"]').waitFor({ timeout: 60000 }); }
+    catch (error) {
+      console.log('Analysis diagnostics:', JSON.stringify({ mobile, status: await page.locator('.live-ai-status').innerText(),
+        responses: analyses.map((r) => ({ status: r.status, detail: r.detail, elapsed_ms: r.elapsed_ms })) }));
+      throw error;
+    }
     assert.equal(analyses.length, 1);
     assert.equal(analyses[0].status, 200);
     assert.ok(analyses[0].row.preview_seconds <= 30);
@@ -47,8 +59,10 @@ try {
     assert.equal(analyses.length, 1, 'Repeat selection reuses derived device cache, not another inference');
     assert.deepEqual(errors, []);
     report.push({ browser: `Edge ${browser.version()}`, viewport: mobile ? '390×844 emulation' : '1440×1000',
-      inference_ms: analyses[0].elapsed_ms, seconds_analyzed: analyses[0].row.preview_seconds,
+      inference_ms: analyses[0].elapsed_ms, server_cached: analyses[0].cached,
+      transport: process.env.CERUM_TEST_HTTP1 === '1' ? 'HTTP/1.1 (local HTTP/2 reset workaround)' : 'browser default', seconds_analyzed: analyses[0].row.preview_seconds,
       cache: 'reload reused derived fingerprint; no second inference', playingQueue: 'not reset by AI refinement', errors });
+    console.log(JSON.stringify(report.at(-1)));
     await context.close();
   }
   // A delayed obsolete request must not replace a newer selected song's results.
@@ -62,11 +76,13 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await route.fulfill({ status: 503, json: { detail: 'test outage' } }).catch(() => {});
   });
-  await page.goto(url);
+  await navigate(page);
   const search = page.getByRole('textbox', { name: 'Search songs' });
   await search.fill('One Dance Drake');
   await page.locator('.search-results button').filter({ hasText: 'One Dance' }).first().click();
-  await pending;
+  let pendingTimer;
+  try { await Promise.race([pending, new Promise((_, reject) => { pendingTimer = setTimeout(() => reject(new Error('Test did not reach the mocked inference request')), 30000); })]); }
+  finally { clearTimeout(pendingTimer); }
   await page.getByRole('button', { name: 'Close full-screen visuals', exact: true }).click();
   await search.fill('Blinding Lights The Weeknd');
   await page.locator('.search-results button').filter({ hasText: 'Blinding Lights' }).first().click();

@@ -9,7 +9,7 @@ if (!/^http:\/\/127\.0\.0\.1:5175\/?$/.test(url) && !/^https:\/\/cerum(?:-[a-z0-
   throw new Error('Use the local dual app or its Vercel deployment.');
 }
 const browser = await chromium.launch({ channel: process.env.CERUM_BROWSER_CHANNEL || 'msedge', headless: true,
-  args: ['--autoplay-policy=no-user-gesture-required'] });
+  args: ['--autoplay-policy=no-user-gesture-required', ...(process.env.CERUM_TEST_HTTP1 === '1' ? ['--disable-quic', '--disable-http2'] : [])] });
 const shots = new URL('../../.cache/ai-browser/', import.meta.url);
 await mkdir(shots, { recursive: true });
 const report = [];
@@ -106,6 +106,7 @@ try {
     assert.equal(overflow, false, 'Page has no horizontal overflow');
     assert.deepEqual(errors, []);
     report.push({ browser: `Chromium / ${process.env.CERUM_BROWSER_CHANNEL || 'msedge'} ${browser.version()}`, viewport: mobile ? '390×844 phone emulation' : '1440×1000 desktop', rejected,
+      transport: process.env.CERUM_TEST_HTTP1 === '1' ? 'HTTP/1.1 (local HTTP/2 reset workaround)' : 'browser default',
       audioRms: Number(audioRms.toFixed(5)), feedback: 'persisted and reranked without playback reset',
       pauseResume: 'position preserved', manualSkip: 'playing',
       automaticTransition: mobile ? 'covered on desktop run' : 'two playing audio elements observed during overlap; advanced automatically', errors });
