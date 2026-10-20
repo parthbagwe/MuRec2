@@ -21,26 +21,34 @@ function moodDistribution(scores) {
 export function createIntelligence(data) {
   const rows = new Map();
   const labels = data?.labels || [];
+  function upsert(row) {
+    if (!row?.track_id || row.embedding?.length !== 512 || row.mood_scores?.length !== labels.length
+      || !row.embedding.every((x) => Number.isInteger(x) && Math.abs(x) <= 127)
+      || !row.mood_scores.every(Number.isFinite) || !Number.isFinite(row.preview_seconds)
+      || row.preview_seconds < 1 || row.preview_seconds > 30) return false;
+    const embedding = unit(row.embedding);
+    if (!embedding) return false;
+    const moods = moodDistribution(row.mood_scores);
+    const order = row.mood_scores.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
+    rows.set(String(row.track_id), { embedding, moods,
+      mood: order[0].v - order[1].v >= 0.025 ? labels[order[0].i] : null });
+    return true;
+  }
   if (data?.schema === 1 && data.dimensions === 512 && labels.length === 8) {
     for (const row of data.tracks || []) {
-      if (!row.track_id || row.embedding?.length !== 512 || row.mood_scores?.length !== labels.length
-        || !row.embedding.every((x) => Number.isInteger(x) && Math.abs(x) <= 127)
-        || !row.mood_scores.every(Number.isFinite) || !Number.isFinite(row.preview_seconds)
-        || row.preview_seconds < 1 || row.preview_seconds > 30) continue;
-      const embedding = unit(row.embedding);
-      if (!embedding) continue;
-      const moods = moodDistribution(row.mood_scores);
-      const order = row.mood_scores.map((v, i) => ({ v, i })).sort((a, b) => b.v - a.v);
-      rows.set(String(row.track_id), { embedding, moods,
-        // Margin is evidence strength, not a calibrated probability.
-        mood: order[0].v - order[1].v >= 0.025 ? labels[order[0].i] : null });
+      upsert(row);
     }
   }
   const get = (track) => rows.get(String(track?.track_id ?? track));
   const sadIndex = labels.indexOf('melancholic');
   const compatibility = (a, b) => clamp(1 - a.moods.reduce((sum, v, i) => sum + Math.abs(v - b.moods[i]), 0) / 2);
   return {
-    indexed: rows.size,
+    get indexed() { return rows.size; },
+    add(result) {
+      if (!result || !data || labels.length !== 8 || result.model !== data.model || result.revision !== data.revision
+        || JSON.stringify(result.labels) !== JSON.stringify(labels)) return false;
+      return upsert(result.row);
+    },
     describe(track) {
       const row = get(track);
       return row ? { ai_indexed: true, ai_model: data.model, predicted_mood: row.mood } : { ai_indexed: false };

@@ -7,6 +7,17 @@ const serviceConfig = JSON.parse(readFileSync(new URL('./public/service-config.j
 
 export default defineConfig({
   plugins: [react(), {
+    // Same handler as production; inference stays out of the Vite/client bundle.
+    name: 'cerum-local-audio-ai',
+    configureServer(server) {
+      server.middlewares.use('/api/analyze-audio', async (req, res) => {
+        const { default: handler } = await import('./api/analyze-audio.js');
+        res.status = (code) => { res.statusCode = code; return res; };
+        res.json = (value) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); return res; };
+        await handler(req, res);
+      });
+    },
+  }, {
     name: 'cerum-dual-api', enforce: 'pre',
     resolveId(source, importer) {
       if (importer?.replaceAll('\\', '/').includes('/src/') && /^(\.\/|\.\.\/)api(?:\.js)?$/.test(source)) {

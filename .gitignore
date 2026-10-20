@@ -67,6 +67,7 @@ frontend/dist-dual/
 
 # Cache
 .cache/
+frontend/server/models/
 .pytest_cache/
 .mypy_cache/
 

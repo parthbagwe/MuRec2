@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "installCommand": "npm ci",
-  "buildCommand": "npm run test:ai && npm run build:dual",
+  "installCommand": "ONNXRUNTIME_NODE_INSTALL=skip npm ci",
+  "buildCommand": "npm run test:ai && node scripts/prepare-ai-runtime.mjs && npm run build:dual",
   "outputDirectory": "dist-dual",
   "headers": [
     { "source": "/intelligence/:name.bin", "headers": [{ "key": "Cache-Control", "value": "public,max-age=31536000,immutable" }] },
@@ -12,6 +12,11 @@
     { "source": "/firebase-config.json", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
   ],
   "functions": {
+    "api/analyze-audio.js": {
+      "maxDuration": 60,
+      "includeFiles": "server/models/**",
+      "excludeFiles": "{node_modules/onnxruntime-node/bin/**/{darwin,win32,arm64}/**,node_modules/onnxruntime-web/**}"
+    },
     "api/charts.js": {
       "maxDuration": 30
     }

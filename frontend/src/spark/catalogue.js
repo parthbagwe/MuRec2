@@ -6,6 +6,7 @@ export function createLocalCatalogue(data) {
   const library = data.fingerprints.map((row) => ({ ...row, track: tracks.get(String(row.track_id)) })).filter((row) => row.track);
   const fingerprints = new Map(library.map((row) => [String(row.track_id), row]));
   let intelligence = createIntelligence(null);
+  const onDemandAnchors = new Set();
   // The indirection allows a lazily downloaded index without rebuilding the catalogue.
   const engine = createEngine(library, { scorePair: (...args) => intelligence.scorePair(...args) });
   const vocabulary = new Set([...tracks.values()].flatMap((track) => engine.normalizedSearchText(`${track.title} ${track.artist}`).split(" ")));
@@ -57,6 +58,12 @@ export function createLocalCatalogue(data) {
   return {
     async call(action, input = {}) {
       if (action === 'setIntelligence') { intelligence = createIntelligence(input.index); return { indexed: intelligence.indexed }; }
+      if (action === 'aiStatus') return intelligence.describe(input.track_id);
+      if (action === 'aiUpsert') {
+        const added = intelligence.add(input.result);
+        if (added) onDemandAnchors.add(String(input.result.row.track_id));
+        return { added };
+      }
       if (action === "addTracks") { addTracks(input.tracks ?? []); return true; }
       if (action === "hydrate") { addTracks(input.tracks ?? []); return (input.tracks ?? []).map((track) => view(tracks.get(String(track.track_id)))); }
       if (action === "tracks") return search(input);
@@ -74,10 +81,28 @@ export function createLocalCatalogue(data) {
             library.push(row);
           }
         }
-        const result = await engine[action](input, input.preferences ?? null);
+        // A newly inferred anchor needs actual learned comparables, not thousands
+        // of unindexed candidates whose unchanged acoustic scores mask the AI.
+        // Keep all original genre/vibe/feedback rules. AutoMix/bridges stay on the
+        // full acoustic pool; only discovery suggestions use this candidate lane.
+        const learnedLane = action === 'recommend' && input.mode !== 'transition' && onDemandAnchors.has(String(input.track_id));
+        const matchingEngine = learnedLane ? createEngine(library.filter((row) => intelligence.describe(row.track_id).ai_indexed),
+          { scorePair: (...args) => intelligence.scorePair(...args) }) : engine;
+        const result = await matchingEngine[action](input, input.preferences ?? null);
+        if (learnedLane && result.recommendations.length < Math.min(Number(input.k) || 10, 30)) {
+          const fallback = await engine[action](input, input.preferences ?? null);
+          const identities = new Set(result.recommendations.map((r) => engine.recordingIdentity(r.title, r.artist)));
+          for (const row of fallback.recommendations) {
+            const identity = engine.recordingIdentity(row.title, row.artist);
+            if (!identities.has(identity)) { result.recommendations.push(row); identities.add(identity); }
+            if (result.recommendations.length >= (Number(input.k) || 10)) break;
+          }
+          result.total = result.recommendations.length;
+        }
         return { ...result, anchor: { ...result.anchor, ...intelligence.describe(result.anchor) },
           intelligence: { indexed: intelligence.indexed, anchor_indexed: intelligence.describe(result.anchor).ai_indexed,
             method: action === 'bridge' ? 'acoustic-bridge' : 'learned-blend',
+            candidate_pool: learnedLane ? 'learned-with-acoustic-fallback' : 'full-catalogue',
             matched: result.recommendations.filter((r) => r.ai_pair_indexed).length } };
       }
       if (action === "genres") return {

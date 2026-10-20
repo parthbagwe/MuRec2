@@ -1,4 +1,4 @@
-# Cerum sound intelligence: first release
+# Cerum sound intelligence
 
 The main Vercel app now supports an optional learned audio index, predicted mood,
 and explicit recommendation feedback. This release does not replace the playback
@@ -23,11 +23,92 @@ engine, preview cap, genre gate, account services, or full-screen visuals.
   within 0.025. English prompts do not establish accuracy for Tamil or Hindi;
   language-specific quality needs listener evaluation.
 - Only the derived index, model/revision, prompt definitions, preview URL hashes,
-  and coverage manifest are deployed. Raw audio is removed after decoding. Model
-  weights and resumable work stay in ignored `.cache/music-ai/`.
+  and coverage manifest are public. Raw audio is removed after offline decoding.
+  Offline weights and resumable work stay in ignored `.cache/music-ai/`.
 - The browser lazily downloads the compact index inside its existing catalogue
   worker. There is no model inference on the UI/audio thread and no paid inference
   endpoint. Unsupported or missing indexes retain acoustic ranking.
+
+## On-demand analysis (October 20 update)
+
+Selecting an unindexed song now starts real server-side audio inference, not a
+mocked delay. The first acoustic recommendations and five-song queue are prepared
+before inference starts. New selections retain their existing 1.5-second reveal;
+automatic transitions, pause/resume, and full-screen visuals never wait for AI.
+
+The browser fetches the existing licensed catalogue preview, decodes/downmixes it
+to mono 48 kHz, and sends **at most 30 seconds** as signed 16-bit PCM (2.88 MB max)
+to the same site's `/api/analyze-audio`. It never reads microphones or uploads
+personal files. The existing Vercel Node function runs the audio-only Q8 ONNX export
+of the same CLAP model. Model weights are server-only, checksum-verified at build,
+and pinned to Xenova revision `c28f2883575e590e04d3146ff0713c2448d691ba`.
+Eight small text-reference vectors come from the pinned original Python model.
+The function averages normalized embeddings of up to three 10-second windows,
+predicts mood similarities, and returns only derived results. It fetches no URLs
+provided by callers and saves no raw audio. No API token, paid inference provider,
+new account, paid service, or billing setting was added. Existing Vercel function
+and bandwidth quotas still apply; this is not unlimited free inference.
+
+Successful results are cached per preview URL SHA-256 and runtime/model version on
+the listener's device, bounded to 24 results. A warm function also caches at most
+64 PCM-hash-derived results in memory. There is no cross-provider account migration
+or central permanent inference database. Device storage failure simply disables
+that cache. Indexed previews bypass inference; repeated searches can use the device
+cache without another upload. Client requests time out after 45 seconds and
+outdated selections abort their requests. In-flight native inference may finish
+server-side after disconnect, but its result cannot overwrite a newer selection.
+
+Once analysis succeeds, discovery suggestions are re-ranked against the analysed
+preview library, retaining original genre, vibe, feedback and artist-diversity
+rules; broader acoustic matches fill sparse genres. This explicitly limited pool
+is shown in the UI. The **already playing queue is never replaced by a late AI
+result**. AutoMix and sound bridges retain the original full-catalogue candidate
+pool and transition engine. Background reranks do not add duplicate account history.
+Unsuccessful, busy or timed-out inference leaves acoustic playback/recommendations
+active and displays an honest fallback message. New fingerprints are not silently
+added to the global 400-preview index, so this is not global all-song coverage.
+
+The public endpoint enforces same-origin browser requests, binary format, streaming
+size bounds, one inference at a time per instance, and eight requests per client per
+minute per instance. Those process-local controls are **not** a distributed/global
+rate limiter. Higher traffic needs deployment-level abuse controls and capacity
+planning, not a promise that every user will always finish in 5–10 seconds.
+
+Local development (prepare the small server model once):
+
+```powershell
+cd frontend
+node scripts/prepare-ai-runtime.mjs
+npm run dev:dual
+```
+
+The Vercel build prepares the same server-only model automatically. CUDA installation
+is skipped and unused platform/WebAssembly binaries are excluded from the function.
+To regenerate the small mood-reference file, run `scripts/export_ai_moods.py` with
+the offline Python environment. Cross-runtime verification:
+
+```powershell
+.venv/Scripts/python.exe scripts/prepare_ondemand_fixture.py
+cd frontend
+node scripts/verify-ondemand-model.mjs
+node scripts/test-ondemand-browser.mjs
+```
+
+The six real-preview compatibility probes (Blinding Lights, Duality, Kesariya,
+Nenjukkul Peidhidum, One Love by Shubh, Tum Se Hi) achieved cosine agreement
+0.9953–0.9965 with the original index and maximum mood-score deviation below 0.012.
+On this laptop, native server inference measured ~3.2 seconds including cold startup,
+then ~0.83–0.89 seconds warm, excluding browser download/upload. These are compatibility
+and local timing measurements, not a listener-quality study or production SLA.
+
+Validation for this update: 78 Node tests passed. Edge 155 desktop and 390×844
+phone emulation passed a real unindexed One Dance search, successful inference,
+learned candidate suggestions, uninterrupted playback, cached reload without a
+second inference, stale-request cancellation and simulated inference outage.
+The playback regression also observed non-silent audio-graph output, saved-position
+pause/resume, manual skip and a real two-element automatic overlap/advancement.
+These are not tests on physical phones, Safari or Firefox. Vercel production timing
+is recorded separately when the deployed endpoint is checked.
 
 ## Ranking and feedback
 
@@ -69,9 +150,9 @@ bounded resumable chunks and verifies the upstream SHA-256 before local loading.
 No new hosting or billing configuration is required.
 
 The coverage manifest in `frontend/public/intelligence/manifest.json` records the
-actual successful count. New searches outside this index still receive acoustic
-analysis; they do not automatically become CLAP-indexed in this release. Extend the
-offline index before deploying updated coverage. This is a limited first release,
+actual successful count. Searches outside the index receive on-demand inference
+when a supported playable preview is available, with acoustic fallback on failure.
+Extend the offline index before deploying broader shared coverage. This is limited,
 not an analysis of all songs in the world.
 The first release prioritises real baseline recommendations for seven English,
 Tamil, Hindi and Punjabi anchors across the Balanced, groove, texture and transition

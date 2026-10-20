@@ -48,3 +48,26 @@ test('real indexed anchors retain distinct, playable five-song chains and strict
     assert.ok(chain.recommendations.every((r) => Number.isFinite(r.hybrid_score)));
   }
 });
+
+test('on-demand anchor compares with learned candidates without changing the transition algorithm', async () => {
+  const { data } = await load('catalogue/manifest.json');
+  const { data: index } = await load('intelligence/manifest.json');
+  const catalogue = createLocalCatalogue(data);
+  await catalogue.call('setIntelligence', { index });
+  const anchor = (await catalogue.call('tracks', { q: 'One Dance Drake' })).results[0];
+  assert.equal(anchor.ai_indexed, false);
+  const input = { track_id: anchor.track_id, mode: 'transition', k: 5, genre_scope: 'strict' };
+  // Fixture vector exercises candidate routing; real cross-runtime audio is tested separately.
+  await catalogue.call('aiUpsert', { result: { ...index, row: { ...index.tracks[0], track_id: anchor.track_id } } });
+  const ordinary = createLocalCatalogue(data);
+  await ordinary.call('setIntelligence', { index: { ...index, tracks: [...index.tracks, { ...index.tracks[0], track_id: anchor.track_id }] } });
+  const chain = await catalogue.call('recommend', input);
+  const unchanged = await ordinary.call('recommend', input);
+  assert.deepEqual(chain.recommendations, unchanged.recommendations, 'Dynamic discovery lane never replaces the existing AutoMix algorithm');
+  const result = await catalogue.call('recommend', { ...input, mode: 'similar', k: 12 });
+  assert.equal(result.intelligence.candidate_pool, 'learned-with-acoustic-fallback');
+  assert.ok(result.intelligence.matched > 0);
+  assert.equal(result.recommendations.length, 12);
+  assert.equal(result.total, 12);
+  assert.ok(result.recommendations.every((r) => r.provider_genre === anchor.provider_genre));
+});

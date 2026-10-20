@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export default function IntelligenceStatus({ result }) {
+export default function IntelligenceStatus({ result, live }) {
   const [index, setIndex] = useState(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -18,9 +18,10 @@ export default function IntelligenceStatus({ result }) {
       : result.indexed === 0
       ? 'The AI index could not load this time. Your suggestions are using acoustic matching.'
       : result.anchor_indexed
-      ? `Your preview is AI-indexed. ${result.matched} of these suggestions use learned sound and predicted mood alongside acoustic matching.`
-      : 'This preview uses acoustic matching. Its AI fingerprint is not in the current index yet.'
+      ? `Your preview is AI-indexed. ${result.matched} of these suggestions use learned sound and predicted mood alongside acoustic matching.${result.candidate_pool === 'learned-with-acoustic-fallback' ? ' Comparing against the analysed preview library; acoustic matches fill any gaps.' : ''}`
+      : 'This preview currently uses acoustic matching. On-demand AI can refine its suggestions when analysis is available.'
       : 'Matching how the preview sounds, with feedback that tunes your next suggestions.'}</p>
-    <small>{index.indexed.toLocaleString()} / {index.total.toLocaleString()} catalogue previews AI-indexed · 30-second previews · other songs use acoustic matching</small>
+    {live && <p className="live-ai-status" role="status" data-state={live.state}>{live.message}</p>}
+    <small>{index.indexed.toLocaleString()} / {index.total.toLocaleString()} catalogue previews pre-indexed · other searched previews analysed on demand · up to 30 seconds sent to Cerum’s AI service; no audio stored</small>
   </aside>;
 }

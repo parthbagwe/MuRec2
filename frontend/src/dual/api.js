@@ -118,7 +118,7 @@ async function preferences(s) {
   preferenceCache = { key: s.user.account_key, until: Date.now() + 10_000, data };
   return data;
 }
-async function recommend(action, input) {
+async function recommend(action, input, { recordHistory = true } = {}) {
   let session, accountUnavailable = false;
   try { session = await sessions.capture(); }
   catch { accountUnavailable = true; }
@@ -137,7 +137,7 @@ async function recommend(action, input) {
   // Public Supabase still supplies search; no private preferences leave this browser for ranking.
   const result = await local();
   await musicRequest('addTracks', { tracks: [result.data.anchor, ...result.data.recommendations] });
-  if (session) (async () => {
+  if (session && recordHistory) (async () => {
     await guard(session);
     if (session.provider === 'firebase') await firebase.saveRecommendation(result.data, input.mode ?? 'transition', session.uid);
     else await legacy.saveRecommendation(session.uid, result.data, input.mode ?? 'transition', () => guard(session));
@@ -147,9 +147,9 @@ async function recommend(action, input) {
   })().catch(storageWarning);
   return result;
 }
-export const getRecommendations = (track_id, k = 10, weights = null, mode = 'similar', genre_scope = 'nearby', vibe_lock = true, liveAnchor = null) => response(recommend('recommend', {
+export const getRecommendations = (track_id, k = 10, weights = null, mode = 'similar', genre_scope = 'nearby', vibe_lock = true, liveAnchor = null, options = {}) => response(recommend('recommend', {
   track_id, k, weights, mode, genre_scope, vibe_lock,
   ...(liveAnchor ? { anchor_track: liveAnchor.track, anchor_analysis: liveAnchor.analysis } : {}),
-}).then((result) => result.data));
+}, options).then((result) => result.data));
 export const getSimilar = (id, k = 10) => getRecommendations(id, k);
 export const getSoundBridge = (track_id, destination_track_id) => response(recommend('bridge', { track_id, destination_track_id }).then((result) => result.data));

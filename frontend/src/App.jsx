@@ -19,6 +19,7 @@ import LogoReveal from "./components/LogoReveal";
 import PlaybackReveal, { PLAYBACK_REVEAL_MS } from "./components/PlaybackReveal";
 import { prepareTrackPlayback } from "./startDiscoveryTrack";
 import IntelligenceStatus from './components/IntelligenceStatus';
+import { analyzeSongOnDemand } from './intelligence/onDemand';
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -69,6 +70,8 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [intelligenceResult, setIntelligenceResult] = useState(null);
+  const [liveAI, setLiveAI] = useState(null);
+  const liveAIRequest = useRef(null);
   const [isSoundBridge, setIsSoundBridge] = useState(false);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [mode, setMode] = useState("similar");
@@ -125,6 +128,7 @@ export default function App() {
   }, []);
 
   useEffect(() => () => {
+    liveAIRequest.current?.abort();
     const pending = playbackRevealGate.current;
     if (pending.timer) window.clearTimeout(pending.timer);
     pending.resolve?.(false);
@@ -173,6 +177,8 @@ export default function App() {
   }
 
   function stageSelection(track, handoff = null) {
+    liveAIRequest.current?.abort();
+    setLiveAI(null);
     setIsSoundBridge(false);
     recommendationRequest.current += 1;
     setAnalysisLoading(null);
@@ -215,12 +221,15 @@ export default function App() {
     setMixLoading(true);
     setModeFeedback(`Re-ranking by ${MODES.find((item) => item.id === nextMode)?.label || nextMode}`);
     const requestId = ++recommendationRequest.current;
+    liveAIRequest.current?.abort();
+    const aiController = new AbortController();
+    liveAIRequest.current = aiController;
+    setLiveAI(null);
     try {
       let recommendationTrack = track;
       let liveAnchor = null;
       if (track.analysis_status !== "complete") {
         if (!track.preview_url) throw new Error("This catalogue result has no playable preview to analyze. Choose a result marked 30-second preview.");
-        const startedAt = performance.now();
         let fingerprint = liveFingerprintCache.current.get(track.preview_url);
         if (!fingerprint) {
           setAnalysisLoading({ track, progress: 0.03, stage: "Preparing the acoustic scan" });
@@ -230,8 +239,6 @@ export default function App() {
           fingerprint = previewProfile.fingerprint;
           if (!fingerprint) throw new Error("Cerum could not produce an acoustic fingerprint for this preview.");
           liveFingerprintCache.current.set(track.preview_url, fingerprint);
-          const remaining = 5000 - (performance.now() - startedAt);
-          if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
         }
         if (requestId !== recommendationRequest.current) return;
         setAnalysisLoading({ track, progress: 1, stage: "Finding its nearest sound" });
@@ -257,6 +264,28 @@ export default function App() {
       setRecommendations(recommendationResult.value.data.recommendations);
       setIntelligenceResult(recommendationResult.value.data.intelligence || null);
       if (user) refreshHistory();
+      // First prepare a playable queue. Neural inference must never hold the
+      // transition clock, restart audio, open/close visuals, or replace that queue.
+      const revision = accountRevision.current;
+      const current = () => !aiController.signal.aborted && requestId === recommendationRequest.current && revision === accountRevision.current;
+      setLiveAI({ state: 'analyzing', message: 'Checking this preview’s AI fingerprint…' });
+      void analyzeSongOnDemand(recommendationTrack, { signal: aiController.signal,
+        onStage: (message) => { if (current()) setLiveAI({ state: 'analyzing', message }); },
+      }).then(async (result) => {
+        if (!current()) return;
+        if (result.state === 'indexed') { setLiveAI(null); return; }
+        if (result.state !== 'ready') { setLiveAI({ state: 'unavailable', message: result.reason }); return; }
+        const refined = await getRecommendations(recommendationTrack.track_id, nextMode === 'transition' ? 5 : 12,
+          nextWeights, nextMode, nextGenreScope, true, liveAnchor, { recordHistory: false });
+        if (!current()) return;
+        setRecommendations(refined.data.recommendations);
+        setIntelligenceResult(refined.data.intelligence || null);
+        setLiveAI({ state: 'ready', message: `${result.cached ? 'Cached AI fingerprint applied' : 'AI analysis complete'} · suggestions updated; your playing queue stays uninterrupted.` });
+      }).catch((error) => {
+        if (current()) setLiveAI({ state: 'unavailable', message: error.name === 'TimeoutError'
+          ? 'AI took too long this time. Acoustic matching and your mix are still active.'
+          : error.message || 'AI is unavailable. Acoustic matching is still active.' });
+      });
     } catch (requestError) {
       setRecommendations([]);
       setError(requestError.response?.data?.detail || requestError.message || "The API is unavailable. Run start-backend.cmd and try again.");
@@ -281,6 +310,8 @@ export default function App() {
   }
 
   async function buildBridge(start, destination, handoff) {
+    liveAIRequest.current?.abort();
+    setLiveAI(null);
     setIsSoundBridge(true);
     setIntelligenceResult(null);
     handlePreviewChange(null);
@@ -382,6 +413,9 @@ export default function App() {
     if (user) recordEvent(track.track_id, "disliked").catch(() => {});
   }
   async function tuneRecommendations(track, reason) {
+    // A late neural rerank must not undo explicit feedback being applied now.
+    liveAIRequest.current?.abort();
+    setLiveAI(null);
     const requestId = recommendationRequest.current;
     const revision = accountRevision.current;
     try {
@@ -505,7 +539,7 @@ export default function App() {
 
         {(selected || recommendations.length > 0) && <motion.div className="results-heading" initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">{mode === "transition" ? "YOUR TRANSITION PATH" : "KEEP THE FEELING GOING"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} songs that fit`) : "Finding your next favourites…"}</h2></div>{scoreMode && <p>{recommendations.some((r) => r.ai_pair_indexed) ? "AI sound · predicted mood · acoustic fit" : scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : "Acoustic match · vibe locked"}</p>}</motion.div>}
         <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
-          <IntelligenceStatus result={intelligenceResult} />
+          <IntelligenceStatus result={intelligenceResult} live={liveAI} />
           {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); requestGenreChoice(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onBeforePlayback={showPlaybackReveal} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} onFeedback={isSoundBridge ? undefined : tuneRecommendations} />)}
         </div>
           </section>

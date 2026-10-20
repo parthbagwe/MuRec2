@@ -10,6 +10,11 @@ https://cerum-spark-parth-2026.web.app, remains independent and unchanged.
   Public search still follows the configured primary. AI coverage is explicit;
   songs outside the derived index keep acoustic matching. The separate Firebase
   Hosting deployment is not changed by publishing the main Vercel app.
+  Unindexed selected previews can now be analysed by the main Vercel site's
+  on-demand audio-only CLAP function. Only up to 30 seconds of public preview audio
+  is sent, never private feedback or account tokens. Results cache on the device;
+  an unavailable/busy AI function leaves the acoustic mix running. Firebase Hosting
+  remains unchanged and has not received this endpoint.
 
 - `frontend/vite.dual.config.js` builds the main site. Vercel runs `npm run build:dual` from `frontend`.
 - `frontend/public/service-config.json` chooses the **primary public music service and default registration provider**, currently `firebase`. It is imported at build time: editing it requires rebuilding and deploying.
