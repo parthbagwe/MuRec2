@@ -1,10 +1,13 @@
 import { createEngine } from "./engine.generated.js";
+import { createIntelligence } from "../intelligence/ranking.js";
 
 export function createLocalCatalogue(data) {
   const tracks = new Map(data.tracks.map((track) => [String(track.track_id), track]));
   const library = data.fingerprints.map((row) => ({ ...row, track: tracks.get(String(row.track_id)) })).filter((row) => row.track);
   const fingerprints = new Map(library.map((row) => [String(row.track_id), row]));
-  const engine = createEngine(library);
+  let intelligence = createIntelligence(null);
+  // The indirection allows a lazily downloaded index without rebuilding the catalogue.
+  const engine = createEngine(library, { scorePair: (...args) => intelligence.scorePair(...args) });
   const vocabulary = new Set([...tracks.values()].flatMap((track) => engine.normalizedSearchText(`${track.title} ${track.artist}`).split(" ")));
   function correctTranspositions(query) {
     return engine.normalizedSearchText(query).split(" ").map((word) => {
@@ -17,7 +20,7 @@ export function createLocalCatalogue(data) {
       return candidates.size === 1 ? [...candidates][0] : word;
     }).join(" ");
   }
-  const view = (track) => engine.cleanTrack(track, fingerprints.get(String(track.track_id)));
+  const view = (track) => ({ ...engine.cleanTrack(track, fingerprints.get(String(track.track_id))), ...intelligence.describe(track) });
   function addTracks(rows) {
     for (const row of rows) if (row?.track_id && !tracks.has(String(row.track_id))) {
       tracks.set(String(row.track_id), row);
@@ -53,6 +56,7 @@ export function createLocalCatalogue(data) {
   }
   return {
     async call(action, input = {}) {
+      if (action === 'setIntelligence') { intelligence = createIntelligence(input.index); return { indexed: intelligence.indexed }; }
       if (action === "addTracks") { addTracks(input.tracks ?? []); return true; }
       if (action === "hydrate") { addTracks(input.tracks ?? []); return (input.tracks ?? []).map((track) => view(tracks.get(String(track.track_id)))); }
       if (action === "tracks") return search(input);
@@ -70,7 +74,11 @@ export function createLocalCatalogue(data) {
             library.push(row);
           }
         }
-        return engine[action](input, input.preferences ?? null);
+        const result = await engine[action](input, input.preferences ?? null);
+        return { ...result, anchor: { ...result.anchor, ...intelligence.describe(result.anchor) },
+          intelligence: { indexed: intelligence.indexed, anchor_indexed: intelligence.describe(result.anchor).ai_indexed,
+            method: action === 'bridge' ? 'acoustic-bridge' : 'learned-blend',
+            matched: result.recommendations.filter((r) => r.ai_pair_indexed).length } };
       }
       if (action === "genres") return {
         genres: [...new Set(library.map((row) => row.profile.texture).filter(Boolean))].sort(),

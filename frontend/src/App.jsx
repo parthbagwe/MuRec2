@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, getSoundBridge, logout, recordEvent, removeFavorite } from "./api";
+import { addFavorite, analyzeUnknown, clearHistory, getAcousticStatus, getFavorites, getHistory, getMe, getRecommendations, getSoundBridge, logout, recordEvent, recordFeedback, removeFavorite } from "./api";
 import AuthPanel from "./components/AuthPanel";
 import LibraryPanel from "./components/LibraryPanel";
 import RecommendationCard from "./components/RecommendationBar";
@@ -18,6 +18,7 @@ import StudioIcon from "./components/StudioIcon";
 import LogoReveal from "./components/LogoReveal";
 import PlaybackReveal, { PLAYBACK_REVEAL_MS } from "./components/PlaybackReveal";
 import { prepareTrackPlayback } from "./startDiscoveryTrack";
+import IntelligenceStatus from './components/IntelligenceStatus';
 
 const DEFAULT_WEIGHTS = { audio: 0.35, lyric: 0.4, collab: 0.25 };
 const MODES = [
@@ -67,6 +68,8 @@ export default function App() {
   const reducedMotion = useReducedMotion();
   const [selected, setSelected] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
+  const [intelligenceResult, setIntelligenceResult] = useState(null);
+  const [isSoundBridge, setIsSoundBridge] = useState(false);
   const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
   const [mode, setMode] = useState("similar");
   const [loading, setLoading] = useState(false);
@@ -170,11 +173,13 @@ export default function App() {
   }
 
   function stageSelection(track, handoff = null) {
+    setIsSoundBridge(false);
     recommendationRequest.current += 1;
     setAnalysisLoading(null);
     handlePreviewChange(null);
     setSelected(track);
     setRecommendations([]);
+    setIntelligenceResult(null);
     setError("");
     setAudioProfile(null);
     setPlaybackHandoff(handoff || prepareTrackPlayback(track));
@@ -250,6 +255,7 @@ export default function App() {
       if (mixResult.status === "fulfilled") setMixQueue([recommendationTrack, ...mixResult.value.data.recommendations.slice(0, 5)]);
       if (recommendationResult.status === "rejected") throw recommendationResult.reason;
       setRecommendations(recommendationResult.value.data.recommendations);
+      setIntelligenceResult(recommendationResult.value.data.intelligence || null);
       if (user) refreshHistory();
     } catch (requestError) {
       setRecommendations([]);
@@ -275,6 +281,8 @@ export default function App() {
   }
 
   async function buildBridge(start, destination, handoff) {
+    setIsSoundBridge(true);
+    setIntelligenceResult(null);
     handlePreviewChange(null);
     setGenrePrompt(null);
     setGenreScope("open");
@@ -294,6 +302,7 @@ export default function App() {
       const response = await getSoundBridge(start.track_id, destination.track_id);
       if (requestId !== recommendationRequest.current) return;
       const path = response.data.recommendations || [];
+      setIntelligenceResult(response.data.intelligence || null);
       setRecommendations(path);
       setMixQueue([start, ...path]);
       if (user) refreshHistory();
@@ -319,6 +328,7 @@ export default function App() {
     try {
       const response = await analyzeUnknown(file, title, 12);
       setSelected(response.data.anchor);
+      setIntelligenceResult(null);
       setGenreScope("nearby");
       setRecommendations(response.data.recommendations);
       setMixQueue([response.data.anchor, ...response.data.recommendations.filter((track) => track.preview_url).slice(0, 5)]);
@@ -354,6 +364,7 @@ export default function App() {
     accountRevision.current++;
     await logout().catch(() => {});
     setUser(null); setFavorites([]); setHistory([]); setLibraryOpen(false);
+    setIntelligenceResult(null);
     setMode("similar"); setSelected(null); setRecommendations([]); setAudioProfile(null); setError(""); setGenreScope(rememberedGenreScope()); setGenrePrompt(null);
   }
 
@@ -369,6 +380,24 @@ export default function App() {
   function dismissRecommendation(track) {
     setRecommendations((items) => items.filter((item) => item.track_id !== track.track_id));
     if (user) recordEvent(track.track_id, "disliked").catch(() => {});
+  }
+  async function tuneRecommendations(track, reason) {
+    const requestId = recommendationRequest.current;
+    const revision = accountRevision.current;
+    try {
+      const saved = await recordFeedback(track.track_id, reason);
+      if (requestId !== recommendationRequest.current || revision !== accountRevision.current) return;
+      setModeFeedback(`${reason === 'more_like_this' ? 'More of this sound' : reason === 'too_sad' ? 'Less of this melancholy' : 'Keeping closer to your starting song'} · ${saved.data.synced ? 'saved to your account' : saved.data.device_persisted ? 'saved on this browser' : 'applied for this session'}`);
+      if (reason !== 'more_like_this') setRecommendations((items) => items.filter((item) => item.track_id !== track.track_id));
+      if (!selected) return;
+      const cached = liveFingerprintCache.current.get(selected.preview_url);
+      const result = await getRecommendations(selected.track_id, mode === 'transition' ? 5 : 12, weights, mode, genreScope || 'nearby', true,
+        cached ? { track: selected, analysis: cached } : null);
+      if (requestId !== recommendationRequest.current || revision !== accountRevision.current) return;
+      setRecommendations(result.data.recommendations);
+      setIntelligenceResult(result.data.intelligence || null);
+      // Feedback reranks suggestions only; the active player and its queue keep running.
+    } catch (requestError) { setError(requestError.message || 'Could not save your feedback.'); }
   }
   async function eraseHistory() { const revision = accountRevision.current; await clearHistory(); if (revision === accountRevision.current) setHistory([]); }
   function authenticated(account) { accountRevision.current++; setUser(account); setFavorites([]); setHistory([]); refreshLibrary(); }
@@ -474,9 +503,10 @@ export default function App() {
         {!error && !selected && <p className="discovery-hint"><StudioIcon name="headphones" />Based on the sound of each preview. Set your genre range when you choose a song.</p>}
         {audioProfile && <><p className="acoustic-signature">{audioProfile.acoustic_signature}</p><div className="audio-profile"><div><span>tempo</span><strong>{audioProfile.bpm} BPM</strong></div><div><span>texture</span><strong>{audioProfile.texture}</strong></div><div><span>rhythm</span><strong>{audioProfile.rhythm_character}</strong></div><div><span>harmony</span><strong>{audioProfile.harmonic_character}</strong></div><div><span>intensity</span><strong>{audioProfile.intensity}</strong></div><div><span>aggression</span><strong>{Math.round(audioProfile.aggression * 100)}%</strong></div></div></>}
 
-        {(selected || recommendations.length > 0) && <motion.div className="results-heading" initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">{mode === "transition" ? "YOUR TRANSITION PATH" : "KEEP THE FEELING GOING"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} songs that fit`) : "Finding your next favourites…"}</h2></div>{scoreMode && <p>{scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : "Acoustic match · vibe locked"}</p>}</motion.div>}
+        {(selected || recommendations.length > 0) && <motion.div className="results-heading" initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .3 }} transition={{ type: "spring", stiffness: 80, damping: 20 }}><div><p className="kicker">{mode === "transition" ? "YOUR TRANSITION PATH" : "KEEP THE FEELING GOING"}</p><h2>{recommendations.length ? (mode === "transition" ? `${recommendations.length + 1}-song continuous run` : `${recommendations.length} songs that fit`) : "Finding your next favourites…"}</h2></div>{scoreMode && <p>{recommendations.some((r) => r.ai_pair_indexed) ? "AI sound · predicted mood · acoustic fit" : scoreMode === "acoustic-transition" ? "tempo · key · energy · texture" : "Acoustic match · vibe locked"}</p>}</motion.div>}
         <div className={`recommendation-grid ${mode === "transition" ? "transition-grid" : ""}`}>
-          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); requestGenreChoice(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onBeforePlayback={showPlaybackReveal} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} />)}
+          <IntelligenceStatus result={intelligenceResult} />
+          {recommendations.map((rec, index) => <RecommendationCard key={rec.track_id} rec={rec} rank={index + 1} onClick={(track) => { handleInteraction(track, "selected"); requestGenreChoice(track); }} playingTrackId={playingTrackId} onPreviewChange={handlePreviewChange} onBeforePlayback={showPlaybackReveal} isFavorite={favoriteIds.has(rec.track_id)} onToggleFavorite={toggleFavorite} onInteraction={handleInteraction} onDismiss={dismissRecommendation} onFeedback={isSoundBridge ? undefined : tuneRecommendations} />)}
         </div>
           </section>
 

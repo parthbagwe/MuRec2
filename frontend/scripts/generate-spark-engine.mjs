@@ -33,13 +33,36 @@ for (const node of ast.statements) {
     }
     for (const edit of edits.sort((a, b) => b.start - a.start)) code = code.slice(0, edit.start) + edit.text + code.slice(edit.end);
   }
+  if (name === "recommend") {
+    // Optional browser-only ranking hook. With no index, generated/server parity is unchanged.
+    const replaceOnce = (before, after) => {
+      if (!code.includes(before)) throw new Error(`AI ranking hook changed: ${before}`);
+      code = code.replace(before, after);
+    };
+    replaceOnce('return { candidate, recordingKey, metrics, score, anchorVibe, genre };',
+      `const ai = intelligence?.scorePair(anchor, candidate, { mode, score, previous, preferences: context });
+       if (ai) score = ai.score;
+       return { candidate, recordingKey, metrics, score, anchorVibe, genre, ai };`);
+    replaceOnce('...cleanTrack(next.candidate.track, next.candidate),',
+      '...cleanTrack(next.candidate.track, next.candidate), ...next.ai?.metadata,');
+    replaceOnce('match_reasons: next.metrics.reasons,',
+      'match_reasons: [...(next.ai?.reasons ?? []), ...next.metrics.reasons].slice(0, 3),');
+    replaceOnce('const reasons = matchReasons(anchor, candidate, parts);',
+      `const ai = intelligence?.scorePair(anchor, candidate, { mode, score: total, preferences: context });
+       if (ai) total = ai.score;
+       const reasons = matchReasons(anchor, candidate, parts);`);
+    replaceOnce('...cleanTrack(candidate.track, candidate),',
+      '...cleanTrack(candidate.track, candidate), ...ai?.metadata,');
+    replaceOnce('match_reasons: [...new Set(reasons)].slice(0, 3),',
+      'match_reasons: [...new Set([...(ai?.reasons ?? []), ...reasons])].slice(0, 3),');
+  }
   snippets.push(code);
 }
 if (allowed.size) throw new Error(`Missing engine exports: ${[...allowed]}`);
 const body = snippets.join("\n\n");
 if (/\b(?:Deno|admin|supabase|fetch|createClient)\b|context\.client/.test(body)) throw new Error("Server-only code leaked into browser engine");
 const generated = ts.transpileModule(`
-export function createEngine(library) {
+export function createEngine(library, intelligence = null) {
 const loadLibrary = async () => library;
 ${body}
 return { recommend, bridge, cleanTrack, transientAnchor, searchRelevance, recordingIdentity, normalizedSearchText,

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { playTrackAfterReveal } from "../startDiscoveryTrack";
 import { motion } from "motion/react";
 import ScoreBreakdown from "./ScoreBreakdown";
@@ -17,8 +17,9 @@ function HeartIcon({ filled }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z" fill={filled ? "currentColor" : "none"} /></svg>;
 }
 
-export default function RecommendationCard({ rec, rank, onClick, playingTrackId, onPreviewChange, onBeforePlayback, isFavorite, onToggleFavorite, onInteraction, onDismiss }) {
+export default function RecommendationCard({ rec, rank, onClick, playingTrackId, onPreviewChange, onBeforePlayback, isFavorite, onToggleFavorite, onInteraction, onDismiss, onFeedback }) {
   const audioRef = useRef(null);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
   const isPlaying = playingTrackId === rec.track_id;
 
   useEffect(() => {
@@ -64,7 +65,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
     <motion.article layout initial={{ opacity: 0, x: rank % 2 ? -72 : 72 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true, amount: .12 }} transition={{ type: "spring", stiffness: 82, damping: 20, delay: Math.min(rank * .035, .24) }} className={`recommendation-card ${isPlaying ? "is-playing" : ""} ${rec.score_mode === "acoustic-transition" ? "transition-card" : ""}`}>
       <div className="card-heading">
         <span className="rank">{rec.transition_step ? `${String(rec.transition_step).padStart(2, "0")} → ${String(rec.transition_step + 1).padStart(2, "0")}` : String(rank).padStart(2, "0")}</span>
-        <span className="score">{Math.round(rec.hybrid_score * 100)}% {rec.transition_step ? "flow" : "match"}</span>
+        <span className="score">{Math.round(rec.hybrid_score * 100)}/100 {rec.transition_step ? "flow" : "fit"}</span>
         <button className={`favorite-button ${isFavorite ? "active" : ""}`} onClick={() => onToggleFavorite(rec)} aria-label={`${isFavorite ? "Remove" : "Add"} ${rec.title} ${isFavorite ? "from" : "to"} favourites`}>
           <HeartIcon filled={isFavorite} />
         </button>
@@ -80,6 +81,7 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
         </div>
         {rec.transition_note && <p className="transition-note">{rec.transition_note}</p>}
         {rec.match_reasons?.length > 0 && <div className="match-reasons" aria-label="Why this matches">{rec.match_reasons.map((reason) => <span key={reason}>{reason}</span>)}</div>}
+        {rec.ai_pair_indexed && <span className="ai-match-tag">AI sound match{rec.predicted_mood ? ` · predicted ${rec.predicted_mood}` : ''}</span>}
       </button>
 
       <details className="score-details">
@@ -96,6 +98,15 @@ export default function RecommendationCard({ rec, rank, onClick, playingTrackId,
         <a className="youtube-button" href={youtubeSearchUrl(rec)} target="_blank" rel="noreferrer" onClick={() => onInteraction(rec, "youtube_opened")}>YouTube ↗</a>
         <button className="dismiss-button" onClick={() => onDismiss(rec)} aria-label={`Show fewer songs like ${rec.title}`}>Not for me</button>
       </div>
+      {onFeedback && <div className="recommendation-feedback" aria-label={`Tune suggestions from ${rec.title}`}>
+        <span>Tune your suggestions</span>
+        <div>{[['more_like_this', 'More like this'], ['too_sad', 'Too sad'], ['too_different', 'Too different']].map(([reason, label]) =>
+          <button key={reason} disabled={feedbackBusy} onClick={async () => {
+            setFeedbackBusy(true);
+            try { await onFeedback(rec, reason); } finally { setFeedbackBusy(false); }
+          }} aria-label={`${label}: ${rec.title}`}>{label}</button>)}
+        </div>
+      </div>}
       {rec.preview_url && <small className="preview-credit">30-second preview courtesy of iTunes</small>}
       {rec.preview_url && (
         <audio ref={audioRef} crossOrigin="anonymous" src={rec.preview_url} preload="none" onTimeUpdate={(event) => { if (event.currentTarget.currentTime >= 30) completePreview(); }} onEnded={completePreview} />

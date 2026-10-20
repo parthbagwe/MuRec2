@@ -37,6 +37,11 @@ export default function ScoreBreakdown({ rec }) {
       {Number.isFinite(rec.timbre_similarity) && Number.isFinite(rec.lyric_similarity) && <Bar label="lyrics" value={rec.lyric_similarity} color="#ff914d" />}
       <Bar label="vibe" value={rec.vibe_similarity} color="#2bb673" />
       <Bar label="genre" value={rec.genre_similarity} color="#50a7ff" />
+      {rec.ai_pair_indexed && <>
+        <Bar label="AI sound" value={Math.max(0, rec.neural_similarity)} color="#c3c6b4" />
+        <Bar label="AI mood" value={rec.predicted_mood_similarity} color="#8eac9d" />
+        <small className="ai-score-note">Model similarity scores, not probabilities. Mood is predicted from the preview; lyrics are not analysed here.</small>
+      </>}
     </div>
   );
 }

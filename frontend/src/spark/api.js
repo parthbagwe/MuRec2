@@ -1,5 +1,6 @@
 import { musicRequest } from "./workerClient.js";
 import { appleSearch } from "./apple.js";
+import { FEEDBACK, readFeedback, saveFeedback, combinedFeedback } from '../intelligence/feedback.js';
 import { createAccount, currentAccount, loginAccount, logoutAccount, loadFavorites, loadHistory, saveFavorite,
   deleteFavorite, deleteHistory, saveEvent, preferences, saveRecommendation, storageWarning } from "./firebase.js";
 
@@ -39,7 +40,8 @@ async function recommend(action, input) {
   let prefs;
   try { prefs = await preferences(); }
   catch (error) { if (input.mode === "personalized") throw error; storageWarning(); }
-  const result = await musicRequest(action, { ...input, preferences: prefs });
+  const result = await musicRequest(action, { ...input, preferences: { ...prefs,
+    feedback: combinedFeedback(readFeedback(prefs?.uid ? `firebase:${prefs.uid}` : null), prefs?.interactions) } });
   // A library outage must not stop the mix or delay the next song.
   saveRecommendation(result, input.mode ?? "transition", prefs?.uid).then(() => {
     if (prefs?.uid) window.dispatchEvent(new Event("cerum-history-saved"));
@@ -87,3 +89,12 @@ export const removeFavorite = (track_id) => response(deleteFavorite(track_id));
 export const getHistory = () => response(loadHistory().then((history) => ({ history })));
 export const clearHistory = () => response(deleteHistory());
 export const recordEvent = (track_id, event_type) => response(saveEvent(track_id, event_type));
+export const recordFeedback = (id, reason) => response((async () => {
+  const choice = FEEDBACK[reason];
+  if (!choice) throw new Error('Choose a feedback reason.');
+  const user = await currentAccount();
+  const device = saveFeedback(user?.id ? `firebase:${user.id}` : null, id, reason);
+  let synced = false;
+  if (user) try { await saveEvent(id, choice.event, user.id, choice.value); synced = true; } catch { storageWarning(); }
+  return { saved: true, synced, device_persisted: device.persisted };
+})());

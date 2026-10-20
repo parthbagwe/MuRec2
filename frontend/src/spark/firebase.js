@@ -138,11 +138,11 @@ export async function saveRecommendation(result, mode, uid) {
   await changeList("history", (entries) => [run, ...entries].slice(0, 30), uid);
 }
 
-export async function saveEvent(track_id, event_type, expectedUid) {
+export async function saveEvent(track_id, event_type, expectedUid, value = null) {
   if (!["preview_completed", "youtube_opened", "liked", "disliked", "dismissed"].includes(event_type)) return;
   const user = await currentAccount();
   if (!user) return;
   if (expectedUid && user.id !== expectedUid) throw new Error("Your account changed. Please retry.");
-  await changeList("interactions", (entries) => [{ track_id, event_type },
-    ...entries.filter((row) => row.track_id !== track_id || row.event_type !== event_type)].slice(0, 100), user.id);
+  await changeList("interactions", (entries) => [{ track_id, event_type, value: Number.isFinite(value) ? value : null },
+    ...entries.filter((row) => row.track_id !== track_id || (Number.isFinite(value) ? row.value != null : row.event_type === event_type))].slice(0, 100), user.id);
 }

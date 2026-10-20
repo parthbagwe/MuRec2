@@ -594,3 +594,18 @@ footer > span > span { font-weight: 400; color: #909681; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+/* Compact, honest model coverage and explicit listening feedback. */
+.intelligence-status { grid-column: 1 / -1; border: 1px solid #ffffff18; border-radius: 14px; padding: 18px 20px; background: #ffffff04; color: #e2e5dc; }
+.intelligence-status > div { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.intelligence-dot { width: 7px; height: 7px; border-radius: 50%; background: #adbf9c; }
+.intelligence-stage { font-size: 11px; border: 1px solid #ffffff25; border-radius: 20px; padding: 3px 8px; color: #a9b1a1; }
+.intelligence-status p { margin: 9px 0; font-size: 14px; line-height: 1.5; color: #bdc2b7; }
+.intelligence-status small, .ai-score-note { display: block; font-size: 11px; line-height: 1.6; color: #91998b; }
+.ai-match-tag { display: inline-block; margin-top: 12px; color: #bacbac; font-size: 11px; }
+.recommendation-feedback { border-top: 1px solid #ffffff0d; padding-top: 13px; margin-top: 12px; }
+.recommendation-feedback > span { color: #92998e; font-size: 11px; }
+.recommendation-feedback > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.recommendation-feedback button { min-height: 36px; border: 1px solid #ffffff18; background: #ffffff05; border-radius: 8px; padding: 6px 10px; color: #c2c9bb; font-size: 11px; cursor: pointer; }
+.recommendation-feedback button:hover, .recommendation-feedback button:focus-visible { background: #ffffff12; border-color: #9bad85; color: #f2f5ed; }
+.recommendation-feedback button:disabled { opacity: .5; cursor: wait; }
+@media (max-width: 700px) { .intelligence-status { padding: 15px; } .recommendation-feedback button { min-height: 44px; } }

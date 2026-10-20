@@ -4,6 +4,7 @@ import * as legacy from './supabaseLibrary.js';
 import { musicRequest } from '../spark/workerClient.js';
 import { createSessions } from './session.js';
 import { createMusicRouter } from './musicRouter.js';
+import { FEEDBACK, readFeedback, saveFeedback, combinedFeedback } from '../intelligence/feedback.js';
 
 export const hostedApiEnabled = true;
 export const accountProviders = ['firebase', 'supabase'];
@@ -49,10 +50,29 @@ export const removeFavorite = (id) => response(privateOperation((s) => s.provide
   ? firebase.deleteFavorite(id, s.uid) : legacy.removeFavorite(s.uid, id)));
 export const clearHistory = () => response(privateOperation((s) => s.provider === 'firebase'
   ? firebase.deleteHistory(s.uid) : legacy.clearHistory(s.uid)));
-export const recordEvent = (id, event) => response(privateOperation((s) => {
+export const recordEvent = (id, event, value = null) => response(privateOperation((s) => {
   if (!['preview_completed', 'youtube_opened', 'liked', 'disliked', 'dismissed'].includes(event)) return;
-  return s.provider === 'firebase' ? firebase.saveEvent(id, event, s.uid) : legacy.recordEvent(s.uid, id, event);
+  return s.provider === 'firebase' ? firebase.saveEvent(id, event, s.uid, value) : legacy.recordEvent(s.uid, id, event, value);
 }));
+export const recordFeedback = (id, reason) => response((async () => {
+  if (!FEEDBACK[reason]) throw new Error('Choose a feedback reason.');
+  const session = await sessions.capture();
+  if (session) await guard(session);
+  const device = saveFeedback(session?.user.account_key, id, reason, storage);
+  if (session) {
+    const { event, value } = FEEDBACK[reason];
+    let synced = true;
+    try {
+      await guard(session);
+      if (session.provider === 'firebase') await firebase.saveEvent(id, event, session.uid, value);
+      else await legacy.recordEvent(session.uid, id, event, value);
+      preferenceCache = null;
+    } catch { synced = false; storageWarning(); }
+    await guard(session);
+    return { saved: true, synced, device_persisted: device.persisted };
+  }
+  return { saved: true, synced: false, device_persisted: device.persisted };
+})());
 
 // Public music requests NEVER attach either provider's user token or private preferences.
 async function remote(action, payload, { signal } = {}) {
@@ -99,16 +119,23 @@ async function preferences(s) {
   return data;
 }
 async function recommend(action, input) {
-  const session = await sessions.capture().catch(() => null);
+  let session, accountUnavailable = false;
+  try { session = await sessions.capture(); }
+  catch { accountUnavailable = true; }
   const local = async () => {
     let prefs;
     try { prefs = await preferences(session); }
     catch (error) { if (input.mode === 'personalized') throw error; storageWarning(); }
     if (input.mode === 'personalized' && !session) throw new Error('Sign in for personal recommendations.');
-    return { data: await musicRequest(action, { ...input, preferences: prefs }) };
+    if (session) await guard(session);
+    const feedback = accountUnavailable ? [] : combinedFeedback(readFeedback(session?.user.account_key, storage), prefs?.interactions);
+    return { data: await musicRequest(action, { ...input, preferences: { ...prefs, feedback },
+      authenticated: Boolean(session) }) };
   };
   // Personal picks stay in-browser: Firebase private history must never be sent to Supabase.
-  const result = input.mode === 'personalized' ? await local() : await route(action, input, local);
+  // Learned ranking and private feedback run in the same local worker for either account provider.
+  // Public Supabase still supplies search; no private preferences leave this browser for ranking.
+  const result = await local();
   await musicRequest('addTracks', { tracks: [result.data.anchor, ...result.data.recommendations] });
   if (session) (async () => {
     await guard(session);

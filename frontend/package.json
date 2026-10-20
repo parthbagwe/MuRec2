@@ -16,7 +16,8 @@
     "dev:dual": "vite --config vite.dual.config.js",
     "build:dual": "vite build --config vite.dual.config.js",
     "test:dual": "node --test src/dual/*.test.mjs",
-    "test:playback": "node --test src/audio/*.test.mjs src/discovery.test.mjs"
+    "test:playback": "node --test src/audio/*.test.mjs src/discovery.test.mjs",
+    "test:ai": "node --test src/intelligence/*.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.3",

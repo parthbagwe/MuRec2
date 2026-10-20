@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "version": "5e8c1c97ee4dabb8",
+  "model": "laion/clap-htsat-unfused",
+  "revision": "8fa0f1c6d0433df6e97c127f64b2a1d6c0dcda8a",
+  "file": "/intelligence/index-5e8c1c97ee4dabb8.bin",
+  "bytes": 191123,
+  "indexed": 400,
+  "total": 5896,
+  "preview_limit_seconds": 30,
+  "window_seconds": 10,
+  "updated_at": "2026-10-20T17:07:44.832783+00:00",
+  "failed": 0,
+  "mood_method": "Zero-shot audio/text similarity; predictions, not measured emotion or calibrated probabilities",
+  "license": "Apache-2.0 (model card)",
+  "fallback": "measured acoustic fingerprints",
+  "sanity_check": {
+    "distinct_text_mean_cosine": 0.11749,
+    "collapsed_embeddings_rejected": true
+  }
+}

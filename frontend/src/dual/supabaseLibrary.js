@@ -34,7 +34,7 @@ export async function history(uid) {
   const items = await take(supabase.from('recommendation_items').select('run_id,track_id,title,artist,subgenre,rank,score').in('run_id', runs.map((run) => run.id)).order('rank').limit(360));
   return runs.map((run) => ({ ...run, suggestions: items.filter((item) => item.run_id === run.id).slice(0, 12) }));
 }
-export const interactions = (uid) => take(supabase.from('interactions').select('track_id,event_type').eq('user_id', uid).order('created_at', { ascending: false }).limit(100));
+export const interactions = (uid) => take(supabase.from('interactions').select('track_id,event_type,value').eq('user_id', uid).order('created_at', { ascending: false }).limit(100));
 export function saveFavorite(uid, track) {
   const row = { user_id: uid };
   for (const key of ['track_id', 'title', 'artist', 'subgenre', 'artwork_url', 'preview_url', 'external_url']) row[key] = track[key] ?? null;
@@ -56,4 +56,4 @@ export async function saveRecommendation(uid, result, mode, guard) {
     rank: index + 1, score: Math.min(1, Math.max(0, Number(track.hybrid_score ?? track.score ?? 0))),
   }))));
 }
-export const recordEvent = (uid, track_id, event_type) => take(supabase.from('interactions').insert({ user_id: uid, track_id, event_type }));
+export const recordEvent = (uid, track_id, event_type, value = null) => take(supabase.from('interactions').insert({ user_id: uid, track_id, event_type, value }));

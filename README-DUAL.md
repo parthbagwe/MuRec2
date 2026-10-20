@@ -5,12 +5,18 @@ https://cerum-spark-parth-2026.web.app, remains independent and unchanged.
 
 ## Current operation
 
+- October AI release: see `README-AI.md`. Both account providers now use the local
+  recommendation worker for optional learned audio/mood ranking and private feedback.
+  Public search still follows the configured primary. AI coverage is explicit;
+  songs outside the derived index keep acoustic matching. The separate Firebase
+  Hosting deployment is not changed by publishing the main Vercel app.
+
 - `frontend/vite.dual.config.js` builds the main site. Vercel runs `npm run build:dual` from `frontend`.
 - `frontend/public/service-config.json` chooses the **primary public music service and default registration provider**, currently `firebase`. It is imported at build time: editing it requires rebuilding and deploying.
 - Both account options remain visible. Firebase users use Firebase Auth and their own Firestore library; original users use Supabase Auth and their existing RLS-protected tables. Passwords are submitted only to the explicitly selected service. There is no automatic account linking, private-data duplication, or credential migration.
 - Existing provider selection survives reload and a change of primary. An existing Supabase session is restored on the first dual-site visit where possible. Sessions do not automatically transfer between the Firebase Hosting and Vercel domains; use the same Firebase credentials on either.
 - Firebase-primary public search/recommendations use the browser worker and a versioned public catalogue, with Apple catalogue lookup for missing songs. Firebase stores private libraries, not full music files. Previews remain 30 seconds; the player, transitions, and visualizer are unchanged.
-- Supabase-primary public calls use only the publishable API key, never Firebase tokens or private preferences. Public service failure falls back to the browser engine, with a 5-minute cooldown for quota errors. Personal picks are computed locally using only the current user's provider-specific preferences.
+- Supabase-primary public search/status calls use only the publishable API key, never Firebase tokens or private preferences. Public service failure falls back to the browser engine, with a 5-minute cooldown for quota errors. The AI release computes recommendations locally for both providers using only the current user's provider-specific preferences.
 - Private library failures are reported, never silently redirected to the other database. Supabase quota restrictions can still prevent original account access until the service recovers.
 - Firebase bounds remain 100 favourites, 30 mixes, 100 feedback entries. No billing, Cloud Functions, Cloud Run, or new paid services were enabled. Firebase configuration in `public/firebase-config.json` is intentionally public web-app configuration; security is enforced by Auth and Firestore rules.
 - Browser catalogue excludes derived lyric vectors. While browser fallback is active, do not claim server-side lyric matching or live charts: its charts are dated snapshots. The Supabase path can restore live/server features once healthy.

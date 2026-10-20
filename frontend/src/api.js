@@ -1,6 +1,7 @@
 import axios from "axios";
 import { createAccount, currentAccount, signIn, signOut, supabase, supabaseEnabled } from "./supabase";
 import { createHostedRequests } from "./serviceRequests";
+import { FEEDBACK, saveFeedback } from './intelligence/feedback.js';
 
 export const hostedApiEnabled = import.meta.env.VITE_MUREC2_API === "supabase";
 export const accountProviders = ['supabase'];
@@ -115,3 +116,11 @@ export const clearHistory = () => hostedApiEnabled ? edge("clearHistory") : api.
 
 export const recordEvent = (track_id, event_type, value = null) =>
   hostedApiEnabled ? edge("event", { track_id, event_type, value }) : api.post("/events", { track_id, event_type, value });
+export async function recordFeedback(id, reason) {
+  const choice = FEEDBACK[reason];
+  if (!choice) throw new Error('Choose a feedback reason.');
+  const user = (await getMe().catch(() => ({ data: {} }))).data.user;
+  const device = saveFeedback(user?.id ? `supabase:${user.id}` : null, id, reason);
+  if (user) await recordEvent(id, choice.event, choice.value);
+  return { data: { saved: true, synced: Boolean(user), device_persisted: device.persisted } };
+}

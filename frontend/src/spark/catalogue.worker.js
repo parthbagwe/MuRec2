@@ -1,6 +1,8 @@
 import { createLocalCatalogue } from "./catalogue.js";
+import { loadIntelligence } from "../intelligence/loadIndex.js";
 
 let pendingCatalogue;
+let intelligenceAttached = false;
 async function loadCatalogue() {
   const response = await fetch("/catalogue/manifest.json");
   if (!response.ok) throw new Error("The downloadable music catalogue is unavailable. Please retry.");
@@ -27,6 +29,11 @@ self.onmessage = async ({ data: { id, action, input } }) => {
   try {
     pendingCatalogue ??= loadCatalogue().catch((error) => { pendingCatalogue = null; throw error; });
     const catalogue = await pendingCatalogue;
+    if (!intelligenceAttached && (action === 'recommend' || action === 'bridge')) {
+      const index = await loadIntelligence();
+      if (index) await catalogue.call('setIntelligence', { index });
+      intelligenceAttached = true;
+    }
     self.postMessage({ id, data: await catalogue.call(action, input) });
   } catch (error) {
     self.postMessage({ id, error: error?.message || "The music catalogue could not be decoded. Please retry." });
